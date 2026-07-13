@@ -43,12 +43,10 @@ module.exports = {
             // Show up to 15 upcoming autoplay tracks to prevent massive queue sizes
             const upcomingAutoplay = autoplayManager.buffer.slice(0, 15);
             const mappedAutoplay = upcomingAutoplay.map(t => ({
-                info: {
-                    title: t.title,
-                    author: t.artists,
-                    uri: `https://music.youtube.com/watch?v=${t.videoId}`,
-                    length: null
-                },
+                title: t.title,
+                author: t.artists,
+                uri: `https://music.youtube.com/watch?v=${t.videoId}`,
+                duration: null,
                 isAutoplay: true
             }));
             displayTracks.push(...mappedAutoplay);

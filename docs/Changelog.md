@@ -113,3 +113,20 @@ This update hardens the core search and Autoplay systems to handle strict filter
 
 #### Search & Command Resilience
 - **Diversified Prefix Rotation**: NodeLink metadata fetching is highly dependent on the YouTube client. If a strict YouTube Music search (`ytmsearch:`) fails to resolve a track, `/stream` and `/mix` commands will now instantly catch the failure and dynamically rotate the query prefix to a standard `ytsearch:`. This leverages different indexing and licensing pools to find tracks that might be "hidden" on specific clients.
+
+## Update 7: The Moonlink Update
+
+This update introduces a complete architectural migration to Moonlink.js to maximize synergy with the V8-engine NodeLink server, completely replacing the generalist `lavalink-client` with a hyper-specialized audio bridging system.
+
+### 1. Moonlink v5 Migration
+- **Library Replacement**: Fully uninstalled `lavalink-client` and implemented `moonlink.js` v5.
+- **Gateway Interception**: Re-architected `src/index.js` to hook into Discord's raw `VOICE_STATE_UPDATE` and `VOICE_SERVER_UPDATE` events, passing packets directly into the `Moonlink.Manager` instance for near-zero latency routing.
+- **Native Data Structures**: Refactored the entire codebase to adopt Moonlink's modern flat `Track` structure (e.g., migrating `track.info.title` to `track.title` and `track.info.length` to `track.duration`), eliminating nested object parsing overhead.
+
+### 2. Command Suite Overhaul
+- **Strict API Validation**: Upgraded search payloads in all music commands (`/stream`, `/mix`) to include proper `requester` objects, satisfying Moonlink's strict internal validation requirements.
+- **Player & Queue API Alignment**: Migrated all command and playback logic from `client.lavalink.getPlayer()` to `client.moonlink.players.get()` and modernized queue manipulation strategies.
+
+### 3. Feature Pruning & Stability
+- **Command Deprecation**: Cleanly and gracefully removed the `/blend` command as requested, streamlining the command pool and reducing UI confusion regarding the "Vibe" tagging system.
+- **Event Parity**: Updated `src/lavalink/playerEvents.js` and `src/lavalink/lavalinkEvents.js` to correctly map to Moonlink's specific event signatures (`trackException`, `nodeCreate`, `nodeRaw`), restoring real-time console logging and UI updates.
