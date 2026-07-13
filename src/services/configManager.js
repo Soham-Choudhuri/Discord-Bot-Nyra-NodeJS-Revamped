@@ -9,11 +9,10 @@ class ConfigManager {
         this.statements = {
             get: db.prepare('SELECT * FROM settings WHERE guild_id = ?'),
             upsert: db.prepare(`
-                INSERT INTO settings (guild_id, max_queue_size, np_channel_id, verbose_mode, autoplay_seed, delete_timer, cmd_channel, np_message_id, artist_memory, regex_blacklist)
-                VALUES (@guild_id, @max_queue_size, @np_channel_id, @verbose_mode, @autoplay_seed, @delete_timer, @cmd_channel, @np_message_id, @artist_memory, @regex_blacklist)
+                INSERT INTO settings (guild_id, max_queue_size, verbose_mode, autoplay_seed, delete_timer, cmd_channel, np_message_id, artist_memory, regex_blacklist)
+                VALUES (@guild_id, @max_queue_size, @verbose_mode, @autoplay_seed, @delete_timer, @cmd_channel, @np_message_id, @artist_memory, @regex_blacklist)
                 ON CONFLICT(guild_id) DO UPDATE SET
                     max_queue_size = excluded.max_queue_size,
-                    np_channel_id = excluded.np_channel_id,
                     verbose_mode = excluded.verbose_mode,
                     autoplay_seed = excluded.autoplay_seed,
                     delete_timer = excluded.delete_timer,
@@ -41,7 +40,6 @@ class ConfigManager {
             config = {
                 guild_id: guildId,
                 max_queue_size: 50,
-                np_channel_id: null,
                 verbose_mode: 1, // 1 = Verbose, 0 = Compact
                 autoplay_seed: null,
                 delete_timer: 0,

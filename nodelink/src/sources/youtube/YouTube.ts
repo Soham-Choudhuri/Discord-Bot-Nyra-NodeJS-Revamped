@@ -1749,6 +1749,7 @@ export default class YouTubeSource {
     const sabr = new SabrStream(sabrConfig)
 
     const stream = new PassThrough()
+    stream.on('error', () => {}) // Prevent unhandled error crashes
     let readyResolved = false
     let readyResolve: () => void
     let readyReject: (err: Error) => void
@@ -1949,7 +1950,9 @@ export default class YouTubeSource {
         return null
       }
     })
-
+    
+    stream.on('error', () => {}) // Prevent unhandled error crashes
+    
     const originalDestroy = stream.destroy.bind(stream)
     stream.destroy = ((err?: Error) => {
       if (cancelSignal.aborted) return stream
@@ -2014,6 +2017,7 @@ export default class YouTubeSource {
     }
 
     const stream = new PassThrough()
+    stream.on('error', () => {}) // Prevent unhandled error crashes
     ;(stream as unknown as Record<string, unknown>).responseStream =
       responseStream
 
@@ -2098,6 +2102,7 @@ export default class YouTubeSource {
     additionalData?: TrackUrlAdditionalData
   ): StreamResult {
     const stream = new PassThrough({ highWaterMark: CHUNK_SIZE * 2 })
+    stream.on('error', () => {}) // Prevent unhandled error crashes
     let position = 0
     let errors = 0
     let refreshes = 0

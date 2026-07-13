@@ -7,12 +7,12 @@ module.exports = {
         console.log(`\n🎵 Nyra is online as ${client.user.tag}`);
         console.log(`📊 Serving ${client.guilds.cache.size} guild(s)\n`);
 
-        // Initialize Lavalink-Client Manager
+        // Initialize Moonlink-Client Manager
         try {
-            await client.lavalink.init(client.user);
-            console.log(`🔗 Lavalink Manager initialized.`);
+            client.moonlink.init(client.user.id);
+            console.log(`🔗 Moonlink Manager initialized.`);
         } catch (error) {
-            console.error(`❌ Failed to initialize Lavalink Manager:`, error);
+            console.error(`❌ Failed to initialize Moonlink Manager:`, error);
         }
     },
 };

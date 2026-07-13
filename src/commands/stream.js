@@ -1,5 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const configManager = require('../services/configManager');
+const ytmusic = require('../services/ytmusic');
+const { findBestMatch } = require('../utils/searchMatcher');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -24,17 +26,16 @@ module.exports = {
             });
         }
 
-        await interaction.deferReply();
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
         const query = interaction.options.getString('query');
 
         try {
-            // Get or Create the Lavalink Player
-            // lavalink-client automatically selects the best node and manages the connection
-            const player = client.lavalink.createPlayer({
+            // Get or Create the Moonlink Player
+            const player = client.moonlink.players.create({
                 guildId: interaction.guildId,
                 voiceChannelId: voiceChannel.id,
-                textChannelId: interaction.channelId,
+                textChannelId: voiceChannel.id, // Route NP message to VC text chat
                 selfDeaf: true,
                 volume: 100
             });
@@ -44,21 +45,54 @@ module.exports = {
 
             // Enforce Max Queue Size from config
             const config = configManager.get(interaction.guildId);
-            if (player.queue.tracks.length >= config.max_queue_size) {
-                return interaction.editReply(`❌ The queue is full! Maximum allowed songs: **${config.max_queue_size}**`);
+            if (player.queue.size >= config.max_queue_size) {
+                return interaction.editReply({ content: `❌ The queue is full! Maximum allowed songs: **${config.max_queue_size}**` });
             }
 
             // Determine the search identifier
             const isUrl = /^https?:\/\//.test(query);
 
-            // Resolve the query through Lavalink-Client
-            const result = await player.search(
-                { query: query, source: isUrl ? undefined : 'ytmsearch' },
-                interaction.user
-            );
+            let searchParams;
+            if (isUrl) {
+                searchParams = { query: query };
+            } else {
+                // Fetch guaranteed tracks from YouTube Music explicitly
+                const ytmResults = await ytmusic.search(query);
+                if (ytmResults && ytmResults.length > 0) {
+                    // Filter to ensure we only process tracks (if ytmusic-api returns mixed types, it's safer)
+                    const tracks = ytmResults.filter(r => r.type === 'SONG' || r.type === 'VIDEO' || !r.type);
+                    if (tracks.length > 0) {
+                        const bestMatch = findBestMatch(query, tracks, item => `${item.title} ${item.artists?.map(a => a.name).join(' ') || item.author || ''}`);
+                        if (bestMatch && bestMatch.videoId) {
+                            searchParams = { query: `https://music.youtube.com/watch?v=${bestMatch.videoId}`, source: 'ytmsearch' };
+                        }
+                    }
+                }
+                
+                // Fallback to standard generic query if our explicit search yields no videoId
+                if (!searchParams) {
+                    searchParams = { query: query, source: 'ytmsearch' };
+                }
+            }
+
+            // Resolve the query through Moonlink
+            let result = await client.moonlink.search({
+                ...searchParams,
+                requester: interaction.user
+            });
+            
+            // Diversified Prefix Rotation Fallback
+            if (!result || !result.tracks || result.tracks.length === 0 || result.loadType === 'empty' || result.loadType === 'error') {
+                console.log(`[Search Fallback] Primary search failed for "${query}". Retrying with alternative YouTube client prefix (ytsearch)...`);
+                result = await client.moonlink.search({
+                    query: query,
+                    source: 'ytsearch',
+                    requester: interaction.user
+                });
+            }
 
             if (!result || !result.tracks || result.tracks.length === 0 || result.loadType === 'empty' || result.loadType === 'error') {
-                return interaction.editReply(`❌ No results found for: **${query}**`);
+                return interaction.editReply({ content: `❌ No results found for: **${query}**` });
             }
 
             let tracksToAdd = [];
@@ -68,31 +102,31 @@ module.exports = {
             switch (result.loadType) {
                 case 'track':
                 case 'search': {
-                    // Logic Improvement: Find the closest title match in search results
-                    const exactMatch = result.tracks.find(t =>
-                        t.info.title.toLowerCase().includes(query.split('-').pop().trim().toLowerCase())
-                    );
-                    tracksToAdd = [exactMatch || result.tracks[0]];
+                    // Logic Improvement: We rely on the initial explicit search being highly accurate.
+                    // If it resolved to a specific video ID URL, result.tracks[0] is exactly what we requested.
+                    tracksToAdd = [result.tracks[0]];
                     embedTitle = '🎵 Track Queued';
-                    embedDesc = `[${tracksToAdd[0].info.title}](${tracksToAdd[0].info.uri}) — ${tracksToAdd[0].info.author}`;
+                    embedDesc = `[${tracksToAdd[0].title}](${tracksToAdd[0].uri}) — ${tracksToAdd[0].author}`;
                     break;
                 }
                 case 'playlist': {
                     tracksToAdd = result.tracks;
                     embedTitle = '📋 Playlist Queued';
-                    embedDesc = `**${result.playlist?.name || 'Unknown Playlist'}** — ${tracksToAdd.length} track(s)`;
+                    embedDesc = `**${result.playlistInfo?.name || 'Unknown Playlist'}** — ${tracksToAdd.length} track(s)`;
                     break;
                 }
                 default: {
-                    return interaction.editReply(`❌ Unexpected result type.`);
+                    return interaction.editReply({ content: `❌ Unexpected result type.` });
                 }
             }
 
-            // Add the track(s) to the lavalink-client managed queue
+            // Add the track(s) to the moonlink managed queue
             await player.queue.add(tracksToAdd);
 
             // If nothing is playing, tell the player to start immediately
             if (!player.playing) {
+                // Play-on-Ready delay to allow NodeLink PREFETCH_COUNT to stabilize
+                await new Promise(resolve => setTimeout(resolve, 750));
                 await player.play();
             }
 
@@ -103,15 +137,15 @@ module.exports = {
                 .setDescription(embedDesc)
                 .setTimestamp();
 
-            if (player.queue.tracks.length > 0) {
-                embed.setFooter({ text: `Queue length: ${player.queue.tracks.length}` });
+            if (player.queue.size > 0) {
+                embed.setFooter({ text: `Queue length: ${player.queue.size}` });
             }
 
             await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
             console.error('❌ /stream error:', error);
-            await interaction.editReply('❌ An error occurred while processing your request.').catch(() => { });
+            await interaction.editReply({ content: '❌ An error occurred while processing your request.' }).catch(() => { });
         }
     },
 };

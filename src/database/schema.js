@@ -23,7 +23,6 @@ function initSchema() {
         CREATE TABLE IF NOT EXISTS settings (
             guild_id TEXT PRIMARY KEY,
             max_queue_size INTEGER DEFAULT 50,
-            np_channel_id TEXT DEFAULT NULL,
             verbose_mode INTEGER DEFAULT 1,
             autoplay_seed TEXT DEFAULT NULL,
             delete_timer INTEGER DEFAULT 0,
@@ -68,15 +67,6 @@ function initSchema() {
     }
 
     // --- Safe Migration for user_favorites ---
-    // 1. Add 'tag' column (safe retry)
-    try {
-        db.prepare(`ALTER TABLE user_favorites ADD COLUMN tag TEXT DEFAULT 'Uncategorized'`).run();
-        console.log('✅ SQLite Migration: Added "tag" column to user_favorites.');
-    } catch (error) {
-        if (!error.message.includes('duplicate column name')) {
-            console.error('❌ Database Migration Error (tag):', error);
-        }
-    }
 
     // 2. Rename old columns for legacy users (Rename is also safe in modern SQLite)
     const favColumns = db.prepare('PRAGMA table_info(user_favorites)').all();

@@ -6,7 +6,7 @@ module.exports = {
         .setDescription('Skip the currently playing track'),
 
     async execute(interaction, client) {
-        const player = client.lavalink.getPlayer(interaction.guildId);
+        const player = client.moonlink.players.get(interaction.guildId);
 
         if (!player || !player.playing) {
             return interaction.reply({
@@ -15,11 +15,15 @@ module.exports = {
             });
         }
 
-        const skippedTitle = player.queue.current?.info?.title || 'Unknown';
+        const skippedTitle = player.current?.title || 'Unknown';
 
         // lavalink-client automatically handles queue progression on skip
-        await player.skip();
+        if (player.queue.size === 0) {
+            await player.stop();
+        } else {
+            await player.skip();
+        }
 
-        await interaction.reply(`⏭️ Skipped: **${skippedTitle}**`);
+        await interaction.reply({ content: `⏭️ Skipped: **${skippedTitle}**`, flags: [MessageFlags.Ephemeral] });
     },
 };

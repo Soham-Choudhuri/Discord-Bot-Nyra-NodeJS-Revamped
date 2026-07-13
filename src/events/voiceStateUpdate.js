@@ -10,7 +10,7 @@ module.exports = {
         const guildId = oldState.guild.id || newState.guild.id;
 
         // 1. Fetch the Lavalink player for this guild
-        const player = client.lavalink.getPlayer(guildId);
+        const player = client.moonlink.players.get(guildId);
 
         // If there's no active player, we don't need to track timeouts
         if (!player) return;
@@ -34,7 +34,7 @@ module.exports = {
                 disconnectTimers.delete(guildId);
 
                 // Fetch the player again in case a user destroyed it manually during the timeout
-                const activePlayer = client.lavalink.getPlayer(guildId);
+                const activePlayer = client.moonlink.players.get(guildId);
                 if (activePlayer) {
                     // Destroy player and leave the channel
                     await activePlayer.destroy('Channel empty for 2 minutes');

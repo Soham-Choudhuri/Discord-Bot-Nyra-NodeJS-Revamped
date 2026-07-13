@@ -17,45 +17,67 @@ module.exports = {
         .setDescription('View the current playback queue'),
 
     async execute(interaction, client) {
-        const player = client.lavalink.getPlayer(interaction.guildId);
+        const player = client.moonlink.players.get(interaction.guildId);
 
         // 1. Guard Clauses
-        if (!player || (!player.playing && player.queue.tracks.length === 0)) {
-            return interaction.reply({ content: '❌ The queue is currently empty.', flags: [MessageFlags.Ephemeral] });
+        if (!player || (!player.playing && player.queue.size === 0)) {
+            return interaction.reply({
+                content: '❌ Nothing is currently playing.',
+                flags: [MessageFlags.Ephemeral],
+            });
         }
 
-        // Handle variations in Lavalink wrapper queue structures
-        const queueTracks = player.queue.tracks || []; 
-        const currentTrack = player.queue.current;
+        const queueTracks = player.queue.all || []; 
+        const currentTrack = player.current;
 
         if (!currentTrack) {
             return interaction.reply({ content: '❌ Nothing is currently playing.', flags: [MessageFlags.Ephemeral] });
         }
 
+        // Combine standard queue with autoplay buffer if enabled
+        let displayTracks = [...queueTracks];
+        const isAutoplay = player.get('autoplay') || false;
+        const autoplayManager = player.get('autoplayManager');
+        
+        if (isAutoplay && autoplayManager && autoplayManager.buffer && autoplayManager.buffer.length > 0) {
+            // Show up to 15 upcoming autoplay tracks to prevent massive queue sizes
+            const upcomingAutoplay = autoplayManager.buffer.slice(0, 15);
+            const mappedAutoplay = upcomingAutoplay.map(t => ({
+                info: {
+                    title: t.title,
+                    author: t.artists,
+                    uri: `https://music.youtube.com/watch?v=${t.videoId}`,
+                    length: null
+                },
+                isAutoplay: true
+            }));
+            displayTracks.push(...mappedAutoplay);
+        }
+
         // 2. Pagination Setup
         let currentPage = 0;
         const tracksPerPage = 10;
-        const maxPages = Math.ceil(queueTracks.length / tracksPerPage) || 1;
+        const maxPages = Math.ceil(displayTracks.length / tracksPerPage) || 1;
 
-        // 3. Total Time Math
-        const totalQueueMs = queueTracks.reduce((acc, track) => acc + (track.info.length || 0), 0);
-        const totalTimeStr = formatDuration(totalQueueMs + (currentTrack.info.length || 0));
+        // 3. Total Time Math (Removed per user request)
 
         // 4. The Embed Generator Function
         const generateEmbed = (page) => {
             const start = page * tracksPerPage;
             const end = start + tracksPerPage;
-            const currentSlice = queueTracks.slice(start, end);
+            const currentSlice = displayTracks.slice(start, end);
 
             const embed = new EmbedBuilder()
                 .setColor('#2b2d31') // Clean, dark Discord-native color
                 .setAuthor({ name: `🎶 Queue for ${interaction.guild.name}` })
-                .setDescription(`**💿 Now Playing**\n[${currentTrack.info.title}](${currentTrack.info.uri}) \`[${formatDuration(currentTrack.info.length)}]\`\n\n**🔼 Up Next**`)
-                .setFooter({ text: `Page ${page + 1} of ${maxPages} | Total Time: ${totalTimeStr}` });
+                .setDescription(`**💿 Now Playing**\n${currentTrack.author || 'Unknown'} - ${currentTrack.title} \`[${formatDuration(currentTrack.duration)}]\`\n\n**🔼 Up Next**`)
+                .setFooter({ text: `Page ${page + 1} of ${maxPages}` });
 
             if (currentSlice.length > 0) {
                 const trackList = currentSlice.map((track, index) => {
-                    return `**${start + index + 1}.** [${track.info.title}](${track.info.uri}) \`[${formatDuration(track.info.length)}]\``;
+                    const durationStr = track.isAutoplay ? '♾️ Autoplay' : formatDuration(track.duration);
+                    const artistStr = track.author || 'Unknown';
+                    return `**${start + index + 1}.** ${artistStr} - ${track.title} \`[${durationStr}]\``;
                 }).join('\n');
                 embed.addFields({ name: '\u200b', value: trackList });
             } else {
@@ -86,13 +108,17 @@ module.exports = {
         const message = await interaction.reply({
             embeds: [generateEmbed(currentPage)],
             components: maxPages > 1 ? [generateButtons(currentPage)] : [],
-            fetchReply: true
+            flags: [MessageFlags.Ephemeral],
+            withResponse: true
         });
 
         if (maxPages <= 1) return; // No need for a collector if there's only 1 page
 
         // 7. The Interactive Collector (Listens for clicks on this specific message)
-        const collector = message.createMessageComponentCollector({ 
+        const collector = message.resource ? message.resource.message.createMessageComponentCollector({ 
+            filter: i => i.user.id === interaction.user.id, // Only the requester can click
+            time: 60000 // Buttons expire after 60 seconds
+        }) : message.createMessageComponentCollector({ 
             filter: i => i.user.id === interaction.user.id, // Only the requester can click
             time: 60000 // Buttons expire after 60 seconds
         });
@@ -104,12 +130,12 @@ module.exports = {
             await i.update({
                 embeds: [generateEmbed(currentPage)],
                 components: [generateButtons(currentPage)]
-            });
+            }).catch(() => {}); // Catch Unknown Message if auto-deleted
         });
 
         // 8. Cleanup after 60 seconds to clear Discord API memory
         collector.on('end', () => {
-            message.edit({ components: [] }).catch(() => {}); // Remove buttons silently
+            interaction.editReply({ components: [] }).catch(() => {}); // Remove buttons silently
         });
     }
 };

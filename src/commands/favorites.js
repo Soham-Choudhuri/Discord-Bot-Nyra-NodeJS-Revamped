@@ -8,6 +8,11 @@ module.exports = {
         .setDescription('Manage your personal saved tracks')
         .addSubcommand(subcommand =>
             subcommand
+                .setName('add')
+                .setDescription('Add the currently playing track to your favorites')
+        )
+        .addSubcommand(subcommand =>
+            subcommand
                 .setName('see')
                 .setDescription('See your list of saved favorite tracks')
         )
@@ -40,6 +45,36 @@ module.exports = {
                 content: '📭 You haven\'t saved any tracks yet! Click the ❤️ button when a song is playing to save it.',
                 flags: [MessageFlags.Ephemeral]
             });
+        }
+
+        // ─── Subcommand: ADD ──────────────────────────────────────────
+        if (subcommand === 'add') {
+            const player = client.moonlink.players.get(interaction.guildId);
+            
+            if (!player || !player.current) {
+                return interaction.reply({ content: '❌ Nothing is currently playing.', flags: [MessageFlags.Ephemeral] });
+            }
+
+            const track = player.current;
+            const trackUrl = track.uri;
+            const trackTitle = track.title;
+            const trackAuthor = track.author || 'Unknown Artist';
+
+            const existing = db.prepare('SELECT 1 FROM user_favorites WHERE user_id = ? AND track_url = ?').get(userId, trackUrl);
+
+            if (existing) {
+                return interaction.reply({ content: `ℹ️ **${trackTitle}** is already in your favorites!`, flags: [MessageFlags.Ephemeral] });
+            }
+
+            try {
+                db.prepare('INSERT INTO user_favorites (user_id, track_title, track_author, track_url) VALUES (?, ?, ?, ?)').run(
+                    userId, trackTitle, trackAuthor, trackUrl
+                );
+                return interaction.reply({ content: `❤️ Added **${trackTitle}** to your favorites!`, flags: [MessageFlags.Ephemeral] });
+            } catch (error) {
+                console.error('❌ DB Error (Favorites add):', error.message);
+                return interaction.reply({ content: '❌ Failed to save track due to a database error.', flags: [MessageFlags.Ephemeral] });
+            }
         }
 
         // ─── Subcommand: SEE ──────────────────────────────────────────
@@ -135,9 +170,9 @@ module.exports = {
                 return interaction.reply({ content: '❌ You must be in a voice channel to stream your favorites.', flags: [MessageFlags.Ephemeral] });
             }
 
-            await interaction.deferReply();
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-            const player = client.lavalink.createPlayer({
+            const player = client.moonlink.players.create({
                 guildId: interaction.guildId,
                 voiceChannelId: voiceChannel.id,
                 textChannelId: interaction.channelId,
@@ -151,14 +186,14 @@ module.exports = {
             const injectionLimit = Math.min(savedTracks.length, 50);
             const tracksToLoad = savedTracks.slice(0, injectionLimit).map(t => t.track_url);
 
-            await interaction.editReply(`🔄 Initializing your personal playlist...`);
+            await interaction.editReply({ content: `🔄 Initializing your personal playlist...` });
 
             // 1. Resolve ONLY the first track to kickstart the engine
             const firstVideoId = tracksToLoad.shift(); 
             const url = `https://music.youtube.com/watch?v=${firstVideoId}`;
             
             try {
-                const result = await player.search({ query: url, source: 'ytmsearch' }, interaction.user);
+                const result = await client.moonlink.search({ query: url, source: 'ytmsearch', requester: interaction.user });
                 
                 if (result.tracks && result.tracks.length > 0) {
                     await player.queue.add(result.tracks[0]);
@@ -167,11 +202,11 @@ module.exports = {
                         await player.play();
                     }
                 } else {
-                    return interaction.editReply(`❌ Failed to load the first track. Please try again.`);
+                    return interaction.editReply({ content: `❌ Failed to load the first track. Please try again.` });
                 }
             } catch (e) {
                 console.error(`Failed to load first favorite:`, e.message);
-                return interaction.editReply(`❌ An error occurred while starting your playlist.`);
+                return interaction.editReply({ content: `❌ An error occurred while starting your playlist.` });
             }
 
             // 2. Stash the remaining IDs directly onto the player for JIT loading

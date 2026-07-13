@@ -17,7 +17,6 @@ module.exports = {
             .setDescription('Configure Nyra settings for your server. Changes are applied instantly.')
             .addFields(
                 { name: '📊 Max Queue Size', value: `\`${config.max_queue_size}\` songs`, inline: true },
-                { name: '📢 Announcement Channel', value: config.np_channel_id ? `<#${config.np_channel_id}>` : '`Current Channel`', inline: true },
                 { name: '📝 Display Mode', value: config.verbose_mode === 1 ? '`Verbose` (Full Embeds)' : '`Compact` (Text Only)', inline: true },
                 { name: '♾️ Autoplay Seed', value: config.autoplay_seed ? `\`${config.autoplay_seed}\`` : '`Default` (Last Song)', inline: true },
                 { name: '⏳ Auto-Delete Timer', value: config.delete_timer > 0 ? `\`${config.delete_timer}s\`` : '`Disabled`', inline: true },
@@ -38,12 +37,6 @@ module.exports = {
                             description: 'Set the maximum number of songs allowed in the queue.',
                             value: 'max_queue_size',
                             emoji: '📊'
-                        },
-                        {
-                            label: 'Announcement Channel',
-                            description: 'Select the channel for "Now Playing" messages.',
-                            value: 'np_channel_id',
-                            emoji: '📢'
                         },
                         {
                             label: 'Verbose vs. Compact Mode',

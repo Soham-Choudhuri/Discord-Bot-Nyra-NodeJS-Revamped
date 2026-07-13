@@ -1,4 +1,5 @@
 const ytmusic = require('./ytmusic');
+const { db } = require('../database/schema');
 
 class AutoplayManager {
     /**
@@ -10,6 +11,7 @@ class AutoplayManager {
         this.guildId = guildId;
         this.mode = mode; 
         this.seedVideoId = initialVideoId;
+        this.recentSeeds = initialVideoId ? [initialVideoId] : [];
         
         // Infinite Memory
         this.playedIds = new Set();
@@ -29,6 +31,10 @@ class AutoplayManager {
         this.playedIds.add(videoId);
         if (this.mode === 'dynamic') {
             this.seedVideoId = videoId;
+            if (!this.recentSeeds.includes(videoId)) {
+                this.recentSeeds.push(videoId);
+                if (this.recentSeeds.length > 3) this.recentSeeds.shift(); // keep last 3
+            }
         }
     }
     
@@ -43,6 +49,9 @@ class AutoplayManager {
         // If buffer is empty, we MUST wait for the fill
         if (this.buffer.length === 0) {
             await this.fillBuffer(config, artistHistory);
+        } else if (this.buffer.length <= 1) {
+            // Low water mark: Pre-fetch in background without waiting
+            this.fillBuffer(config, artistHistory).catch(() => {});
         }
         
         return this.buffer.shift() || null;
@@ -65,27 +74,95 @@ class AutoplayManager {
                 regex = /\b(slowed|reverb|nightcore|remix)\b/i;
             }
 
-            while (this.retryCount < 3) {
-                try {
-                    // Fetch recommendations
-                    const tracks = await ytmusic.getAdvancedUpNexts(this.seedVideoId);
+            let recoveryAttempts = 0;
+            while (this.retryCount < 3 || recoveryAttempts < 2) {
+                // Seed Recovery Logic
+                if (this.retryCount >= 3) {
+                    console.warn(`[AutoplayManager] Dead end reached for seed ${this.seedVideoId}. Attempting recovery...`);
                     
-                    // Filter with Advanced Heuristics
-                    const validTracks = tracks.filter(t => {
+                    let newSeed = null;
+                    
+                    // Priority 1: Dynamic Recovery via User Favorites
+                    try {
+                        const fav = db.prepare('SELECT track_url FROM user_favorites ORDER BY RANDOM() LIMIT 1').get();
+                        if (fav && fav.track_url) {
+                            const url = new URL(fav.track_url);
+                            const favId = url.searchParams.get('v');
+                            if (favId) newSeed = favId;
+                        }
+                    } catch (err) {
+                        console.error('[AutoplayManager] SQLite Recovery failed:', err.message);
+                    }
+                    
+                    // Priority 2: Fallback to Played IDs
+                    if (!newSeed) {
+                        const playedArray = Array.from(this.playedIds);
+                        const candidates = playedArray.filter(id => id !== this.seedVideoId);
+                        if (candidates.length > 0) {
+                            newSeed = candidates[Math.floor(Math.random() * candidates.length)];
+                        } else if (config.autoplay_seed) {
+                            newSeed = config.autoplay_seed;
+                        }
+                    }
+                    
+                    if (newSeed) {
+                        this.seedVideoId = newSeed;
+                        this.retryCount = 0;
+                        recoveryAttempts++;
+                        console.log(`[AutoplayManager] Recovered with new seed: ${this.seedVideoId}`);
+                    } else {
+                        console.error(`[AutoplayManager] Recovery failed. No fallback seeds available.`);
+                        break;
+                    }
+                }
+
+                try {
+                    // Bi-directional Seed Evolution: Fetch recommendations from a cluster of recent seeds
+                    const activeSeed = (this.recentSeeds && this.recentSeeds.length > 0)
+                        ? this.recentSeeds[Math.floor(Math.random() * this.recentSeeds.length)]
+                        : this.seedVideoId;
+
+                    // Fetch recommendations
+                    const tracks = await ytmusic.getAdvancedUpNexts(activeSeed);
+                    
+                    // Filter with Advanced Heuristics (Tiered Fallback System)
+                    let validTracks = [];
+                    
+                    const sorter = (a, b) => {
+                        if (a.videoType === 'MUSIC_VIDEO_TYPE_ATV' && b.videoType !== 'MUSIC_VIDEO_TYPE_ATV') return -1;
+                        if (a.videoType !== 'MUSIC_VIDEO_TYPE_ATV' && b.videoType === 'MUSIC_VIDEO_TYPE_ATV') return 1;
+                        return 0;
+                    };
+
+                    // Tier 1: Strict (ATV/OMV + Regex + Artist History)
+                    validTracks = tracks.filter(t => {
                         if (!t.videoId || this.playedIds.has(t.videoId)) return false;
-                        
-                        // 1. ATV isolation
-                        if (t.videoType !== 'MUSIC_VIDEO_TYPE_ATV') return false;
-                        
-                        // 2. Regex Blacklist (Title & Artist)
+                        if (t.videoType !== 'MUSIC_VIDEO_TYPE_ATV' && t.videoType !== 'MUSIC_VIDEO_TYPE_OMV') return false;
                         const searchStr = `${t.title} ${t.artists}`;
                         if (regex.test(searchStr)) return false;
-
-                        // 3. Artist History (Artist Shuffling)
                         if (artistHistory.includes(t.artists)) return false;
-                        
                         return true;
-                    });
+                    }).sort(sorter);
+
+                    // Tier 2: Soft Regex (ATV/OMV + Artist History, Ignore Regex)
+                    if (validTracks.length === 0) {
+                        validTracks = tracks.filter(t => {
+                            if (!t.videoId || this.playedIds.has(t.videoId)) return false;
+                            if (t.videoType !== 'MUSIC_VIDEO_TYPE_ATV' && t.videoType !== 'MUSIC_VIDEO_TYPE_OMV') return false;
+                            if (artistHistory.includes(t.artists)) return false;
+                            return true;
+                        }).sort(sorter);
+                    }
+
+                    // Tier 3: Desperate (Ignore VideoType & Regex, Only require Artist History)
+                    if (validTracks.length === 0) {
+                        validTracks = tracks.filter(t => {
+                            if (!t.videoId || this.playedIds.has(t.videoId)) return false;
+                            if (artistHistory.includes(t.artists)) return false;
+                            return true;
+                        }); // No need to sort ATV/OMV since this is a desperate fallback
+                    }
+
                     
                     if (validTracks.length === 0) {
                         this.retryCount++;

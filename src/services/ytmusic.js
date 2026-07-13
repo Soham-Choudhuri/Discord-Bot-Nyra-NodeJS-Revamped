@@ -61,8 +61,8 @@ async function getAdvancedUpNexts(videoId) {
         
         return {
             videoId: renderer.videoId,
-            title: renderer.title?.runs?.[0]?.text || '',
-            artists: renderer.shortBylineText?.runs?.[0]?.text || '',
+            title: renderer.title?.runs?.map(r => r.text).join('') || '',
+            artists: renderer.shortBylineText?.runs?.map(r => r.text).join('') || '',
             videoType: renderer.navigationEndpoint?.watchEndpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType || 'UNKNOWN'
         };
     }).filter(Boolean);

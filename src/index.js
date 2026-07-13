@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const { Client, GatewayIntentBits } = require('discord.js');
-const { LavalinkManager } = require('lavalink-client');
+const { Manager } = require('moonlink.js');
 const { loadCommands } = require('./handlers/commandHandler');
 const { loadEvents } = require('./handlers/eventHandler');
 const { registerLavalinkEvents } = require('./lavalink/lavalinkEvents');
@@ -23,47 +23,35 @@ const client = new Client({
 
 require('./handlers/antiCrash')(client);
 
-// ─── Lavalink-Client (NodeLink Manager) ───────────────────────────
-client.lavalink = new LavalinkManager({
+// ─── Moonlink Manager ───────────────────────────────────────────────
+client.moonlink = new Manager({
     nodes: [
         {
-            authorization: process.env.LAVALINK_PASSWORD,
+            password: process.env.LAVALINK_PASSWORD,
             host: process.env.LAVALINK_HOST,
             port: parseInt(process.env.LAVALINK_PORT) || 2333,
             secure: false,
-            id: 'Nyra-Node'
+            identifier: 'Nyra-Node'
         }
     ],
-    // IMPORTANT: This tells lavalink-client how to send packets to Discord
-    sendToShard: (guildId, payload) => {
-        client.guilds.cache.get(guildId)?.shard?.send(payload);
+    options: {
+        clientName: "Nyra Brooks"
     },
-    client: {
-        id: process.env.CLIENT_ID, // Make sure CLIENT_ID is in your .env
-        username: "Nyra Brooks"
-    },
-    // We disable the built-in autoPlay because we are porting your custom ytmusic logic
-    autoSkip: true,
-    playerOptions: {
-        defaultSearchPlatform: "ytmsearch",
-        onDisconnect: {
-            destroyPlayer: true // Cleans up memory if the bot is kicked from the channel
-        },
-        onEmptyQueue: {
-            destroyPlayer: false, // We keep it alive briefly to let our custom Autoplay kick in
-            autoPlayFunction: null
-        }
+    // This tells moonlink.js how to send packets to Discord
+    send: (guildId, payload) => {
+        const guild = client.guilds.cache.get(guildId);
+        if (guild) guild.shard.send(typeof payload === 'string' ? JSON.parse(payload) : payload);
     }
 });
 
-// Note: We removed `client.queue = new Map()` because lavalink-client 
+// We removed `client.queue = new Map()` because moonlink.js 
 // has a robust, built-in queue system (player.queue) that we will use instead.
 
-// ─── Register Lavalink Node Events ───────────────────────────────
-// We pass the new lavalink manager to your event registrar
-registerLavalinkEvents(client.lavalink);
+// ─── Register Moonlink Node Events ───────────────────────────────
+// We pass the new moonlink manager to your event registrar
+registerLavalinkEvents(client.moonlink);
 registerPlayerEvents(client);
-client.on("raw", (d) => client.lavalink.sendRawData(d));
+client.on("raw", (d) => client.moonlink.packetUpdate(d));
 
 // ─── Initialize & Start ──────────────────────────────────────────
 (async () => {
@@ -92,9 +80,9 @@ const shutdown = async (signal) => {
     
     try {
         // 1. Destroy all active music players gracefully
-        if (client.lavalink && client.lavalink.players) {
-            for (const player of client.lavalink.players.values()) {
-                await player.destroy("Bot host is restarting/shutting down.");
+        if (client.moonlink && client.moonlink.players) {
+            for (const player of client.moonlink.players.all) {
+                await player.destroy();
             }
             console.log('✅ All audio sessions terminated cleanly.');
         }

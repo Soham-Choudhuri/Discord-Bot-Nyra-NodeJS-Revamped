@@ -1,6 +1,5 @@
-const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
+const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
 const configManager = require('../services/configManager');
-const { autoDelete } = require('../utils/deleteTimer');
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -11,7 +10,8 @@ module.exports = {
 
         // ─── Command Channel Restriction ────────────────────────────
         if (interaction.isChatInputCommand()) {
-            if (config.cmd_channel && interaction.channelId !== config.cmd_channel) {
+            const isOwner = interaction.user.id === interaction.guild.ownerId;
+            if (config.cmd_channel && interaction.channelId !== config.cmd_channel && !isOwner) {
                 return interaction.reply({
                     content: `❌ Commands are restricted to <#${config.cmd_channel}>.`,
                     flags: [MessageFlags.Ephemeral]
@@ -24,13 +24,7 @@ module.exports = {
             try {
                 await command.execute(interaction, client);
                 
-                // --- Auto-Delete Exclusion Logic ---
-                const isSettings = interaction.commandName === 'settings';
-                const isEphemeral = interaction.flags?.has(MessageFlags.Ephemeral);
-
-                if (!isSettings && !isEphemeral) {
-                    autoDelete(interaction, guildId);
-                }
+                // Auto-Delete has been removed since all commands are Ephemeral
             } catch (error) {
                 console.error(`❌ Error executing /${interaction.commandName}:`, error);
                 const replyData = { content: '❌ Something went wrong while executing this command.', flags: [MessageFlags.Ephemeral] };
@@ -41,93 +35,13 @@ module.exports = {
                     await interaction.reply(replyData).catch(() => {});
                 }
                 
-                // Errors are usually ephemeral, but we apply the same check for safety
-                const isEphemeralError = interaction.flags?.has(MessageFlags.Ephemeral);
-                if (!isEphemeralError) {
-                    autoDelete(interaction, guildId);
-                }
+                // Removed auto-delete fallback logic
             }
             return;
         }
 
-        // ─── Buttons (Favorites Interactive Save) ──────────────────
-        if (interaction.isButton()) {
-            if (interaction.customId === 'save_favorite') {
-                // Extract track details from the Now Playing embed
-                const embed = interaction.message.embeds[0];
-                if (!embed || !embed.url) {
-                    return interaction.reply({ content: '❌ Could not find track details.', flags: [MessageFlags.Ephemeral] });
-                }
-
-                // Discord limits customIds to 100 characters. 
-                // We extract just the YouTube Video ID from the URL to keep the ID small.
-                const videoIdMatch = embed.url.match(/[?&]v=([^&]+)/);
-                const videoId = videoIdMatch ? videoIdMatch[1] : 'unknown';
-
-                // Build the categorization dropdown
-                const tagMenu = new StringSelectMenuBuilder()
-                    .setCustomId(`select_tag_${videoId}`)
-                    .setPlaceholder('Select a vibe for this track...')
-                    .addOptions([
-                        { label: 'Heavy / Metalcore', description: 'Massive drops and aggressive riffs', value: 'heavy', emoji: '🎸' },
-                        { label: 'Late Night / Chill', description: 'Slower, atmospheric tracks', value: 'chill', emoji: '🌙' },
-                        { label: 'High Energy', description: 'Upbeat, fast-paced anthems', value: 'energy', emoji: '🔥' },
-                        { label: 'Uncategorized', description: 'Just save it to my main list', value: 'uncategorized', emoji: '📁' }
-                    ]);
-
-                const row = new ActionRowBuilder().addComponents(tagMenu);
-
-                // Ask the user privately
-                await interaction.reply({
-                    content: `**${embed.title}**\nWhere should Nyra save this track?`,
-                    components: [row],
-                    flags: [MessageFlags.Ephemeral]
-                });
-                return;
-            }
-            return;
-        }
-
-        // ─── Select Menus (Vibe Check & Settings) ───────────────────────
+        // ─── Select Menus (Settings) ───────────────────────
         if (interaction.isStringSelectMenu()) {
-            if (interaction.customId.startsWith('select_tag_')) {
-                const selectedTag = interaction.values[0];
-                
-                // We need to fetch the original track details. 
-                // Because this is an ephemeral reply to a button on the main embed,
-                // we can read the original message's embed!
-                const originalEmbed = interaction.message.reference ? 
-                    (await interaction.channel.messages.fetch(interaction.message.reference.messageId)).embeds[0] : null;
-
-                // Fallback: If reference is lost, we still have the video ID in the customId
-                const videoId = interaction.customId.split('select_tag_')[1];
-                const trackUrl = originalEmbed ? originalEmbed.url : `https://youtube.com/watch?v=${videoId}`;
-                const trackTitle = originalEmbed ? originalEmbed.title : 'Unknown Title';
-                const trackAuthor = originalEmbed ? originalEmbed.fields.find(f => f.name === 'Artist')?.value : 'Unknown Artist';
-
-                // Prevent duplicates
-                const { db } = require('../database/schema');
-                const existing = db.prepare(`SELECT id FROM user_favorites WHERE user_id = ? AND track_url = ?`).get(interaction.user.id, trackUrl);
-
-                if (existing) {
-                    // If it exists, just update the tag
-                    db.prepare(`UPDATE user_favorites SET tag = ? WHERE id = ?`).run(selectedTag, existing.id);
-                    await interaction.update({ 
-                        content: `✅ Updated **${trackTitle}** to the **${selectedTag}** vibe!`, 
-                        components: [] 
-                    });
-                } else {
-                    // Insert brand new
-                    db.prepare(`INSERT INTO user_favorites (user_id, track_title, track_author, track_url, tag) VALUES (?, ?, ?, ?, ?)`).run(
-                        interaction.user.id, trackTitle, trackAuthor, trackUrl, selectedTag
-                    );
-                    await interaction.update({ 
-                        content: `❤️ Saved **${trackTitle}** to your **${selectedTag}** vibe!`, 
-                        components: [] 
-                    });
-                }
-                return;
-            }
 
             if (interaction.customId === 'settings_menu') {
                 const setting = interaction.values[0];
@@ -154,8 +68,6 @@ module.exports = {
 
                 if (setting === 'max_queue_size') {
                     input.setLabel('New Max Queue Size (1-500)').setPlaceholder('50');
-                } else if (setting === 'np_channel_id') {
-                    input.setLabel('Announcement Channel ID').setPlaceholder('Channel ID or "none"').setRequired(false);
                 } else if (setting === 'autoplay_seed') {
                     input.setLabel('Custom Autoplay Seed').setPlaceholder('Video ID or "none"').setRequired(false);
                 } else if (setting === 'delete_timer') {
@@ -186,10 +98,6 @@ module.exports = {
                 }
                 configManager.set(guildId, 'max_queue_size', num);
             } 
-            else if (interaction.customId === 'modal_np_channel_id') {
-                if (!value || value.toLowerCase() === 'none') value = null;
-                configManager.set(guildId, 'np_channel_id', value);
-            }
             else if (interaction.customId === 'modal_autoplay_seed') {
                 if (!value || value.toLowerCase() === 'none') value = null;
                 configManager.set(guildId, 'autoplay_seed', value);

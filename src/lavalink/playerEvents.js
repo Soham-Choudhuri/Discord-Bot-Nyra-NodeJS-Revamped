@@ -1,6 +1,7 @@
-const { EmbedBuilder, ActivityType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActivityType } = require('discord.js');
 const ytmusic = require('../services/ytmusic');
 const configManager = require('../services/configManager');
+const { db } = require('../database/schema'); // For JIT Fallback search
 
 /**
  * Extracts the YouTube videoId from a track URI.
@@ -35,12 +36,40 @@ function formatDuration(ms) {
 }
 
 /**
+ * Shared circuit breaker logic for track errors and stuck tracks.
+ * @returns {boolean} True if tripped, False if safe.
+ */
+async function checkCircuitBreaker(player, client) {
+    let breakerCount = player.get('circuit_breaker') || 0;
+    breakerCount++;
+    player.set('circuit_breaker', breakerCount);
+
+    clearTimeout(player.get('breaker_timeout'));
+    player.set('breaker_timeout', setTimeout(() => {
+        player.set('circuit_breaker', 0);
+    }, 10000));
+
+    if (breakerCount >= 3) {
+        console.error(`🔴 Circuit Breaker tripped in guild ${player.guildId}! Too many rapid errors.`);
+        const channelId = player.textChannelId || player.voiceChannelId;
+        const textChannel = client.channels.cache.get(channelId);
+        if (textChannel) {
+            textChannel.send(`🔴 NodeLink is experiencing severe errors. Playback paused to prevent spam.`).catch(() => {});
+        }
+        await player.stopPlaying();
+        player.set('circuit_breaker', 0);
+        return true;
+    }
+    return false;
+}
+
+/**
  * Registers global player events on the Lavalink-Client manager.
  */
 function registerPlayerEvents(client) {
 
     // ─── Track Start Event ───────────────────────────────────────────
-    client.lavalink.on("trackStart", async (player, track, payload) => {
+    client.moonlink.on("trackStart", async (player, track) => {
         const guildId = player.guildId;
         const config = configManager.get(guildId);
 
@@ -54,8 +83,8 @@ function registerPlayerEvents(client) {
 
         // --- Artist History Tracking (Engine Improvement) ---
         let artistHistory = player.get('artistHistory') || [];
-        if (track.info.author && !artistHistory.includes(track.info.author)) {
-            artistHistory.push(track.info.author);
+        if (track.author && !artistHistory.includes(track.author)) {
+            artistHistory.push(track.author);
             const memoryLimit = Math.min(config.artist_memory || 5, 10);
             while (artistHistory.length > memoryLimit) {
                 artistHistory.shift();
@@ -63,8 +92,16 @@ function registerPlayerEvents(client) {
             player.set('artistHistory', artistHistory);
         }
 
-        const channelId = config.np_channel_id || player.textChannelId;
-        const textChannel = client.channels.cache.get(channelId);
+        // Proactively fill the Autoplay buffer so `/queue` can display upcoming tracks
+        if (autoplayManager && videoId) {
+            autoplayManager.fillBuffer(config, artistHistory).catch(() => {});
+        }
+
+        // We always try to route the NP message to the Voice Channel's text chat.
+        // Fallback to interaction text channel if somehow VC text channel isn't accessible.
+        const voiceChannelId = player.voiceChannelId;
+        const textChannelId = player.textChannelId; // This will now be the VC ID from stream.js
+        const textChannel = client.channels.cache.get(textChannelId) || client.channels.cache.get(voiceChannelId);
 
         if (textChannel) {
             const isVerbose = config.verbose_mode === 1;
@@ -75,39 +112,30 @@ function registerPlayerEvents(client) {
                 const embed = new EmbedBuilder()
                     .setColor(0x7C3AED)
                     .setAuthor({ name: '🎵 Now Playing' })
-                    .setTitle(track.info.title)
-                    .setURL(track.info.uri)
+                    .setTitle(track.title)
+                    .setURL(track.uri)
                     .addFields(
-                        { name: 'Artist', value: track.info.author || 'Unknown', inline: true },
-                        { name: 'Duration', value: formatDuration(track.info.length), inline: true },
+                        { name: 'Artist', value: track.author || 'Unknown', inline: true },
+                        { name: 'Duration', value: formatDuration(track.duration), inline: true },
                     )
                     .setTimestamp();
 
-                if (track.info.artworkUrl) embed.setThumbnail(track.info.artworkUrl);
+                if (track.artworkUrl) embed.setThumbnail(track.artworkUrl);
 
-                if (player.queue.tracks.length > 0) {
-                    embed.setFooter({ text: `${player.queue.tracks.length} track(s) remaining in queue` });
+                if (player.queue.size > 0) {
+                    embed.setFooter({ text: `${player.queue.size} track(s) remaining in queue` });
                 } else if (player.get('autoplay')) {
                     embed.setFooter({ text: '♾️ Autoplay is enabled' });
                 }
 
-                // The Verbose Button
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('save_favorite')
-                        .setLabel('Save')
-                        .setEmoji('❤️')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-                response = { embeds: [embed], components: [row], content: null };
+                response = { embeds: [embed], components: [], content: null };
             } else {
                 // The Compact Text
-                response = { content: `🎵 Now playing: **${track.info.author} - ${track.info.title}**`, embeds: [], components: [] };
+                response = { content: `🎵 Now playing: **${track.author} - ${track.title}**`, embeds: [], components: [] };
             }
 
             // --- Activity Status Update (Global) ---
-            client.user.setActivity(`${track.info.author} - ${track.info.title}`, { type: ActivityType.Listening });
+            client.user.setActivity(`${track.author} - ${track.title}`, { type: ActivityType.Listening });
 
             // --- Persistent Message Logic (Delete & Resend) ---
             if (config.np_message_id) {
@@ -121,11 +149,7 @@ function registerPlayerEvents(client) {
                 const newMsg = await textChannel.send(response);
                 configManager.set(guildId, 'np_message_id', newMsg.id);
 
-                // --- Compact Mode Reaction Trigger ---
-                // If it's compact mode, add the heart reaction for users to click
-                if (!isVerbose) {
-                    await newMsg.react('❤️').catch(() => { });
-                }
+                // Removed Compact Mode Reaction Trigger
             } catch (error) {
                 console.error('❌ Persistent NP message error:', error.message);
             }
@@ -133,7 +157,7 @@ function registerPlayerEvents(client) {
     });
 
     // ─── Queue End Event (The Autoplay & JIT Engine) ─────────────────
-    client.lavalink.on("queueEnd", async (player, track, payload) => {
+    client.moonlink.on("queueEnd", async (player) => {
         const guildId = player.guildId;
 
         // 1. Check the Just-In-Time Favorites Queue first
@@ -146,23 +170,33 @@ function registerPlayerEvents(client) {
 
             try {
                 const url = `https://music.youtube.com/watch?v=${nextVideoId}`;
-                const searchResult = await player.search(
-                    { query: url, source: 'ytmsearch' },
-                    client.user
-                );
+                let searchResult = await client.moonlink.search({
+                    query: url,
+                    source: 'ytmsearch',
+                    requester: client.user
+                });
+
+                if (!searchResult.tracks || searchResult.tracks.length === 0) {
+                    // Fallback to plain text search if URL fails (e.g. video deleted or region blocked)
+                    const fav = db.prepare('SELECT track_title, track_author FROM user_favorites WHERE track_url = ?').get(url);
+                    if (fav) {
+                        console.log(`[JIT Favorites] Fallback search for: ${fav.track_title} ${fav.track_author}`);
+                        searchResult = await client.moonlink.search({ query: `${fav.track_title} ${fav.track_author}`, source: 'ytmsearch', requester: client.user });
+                    }
+                }
 
                 if (searchResult.tracks && searchResult.tracks.length > 0) {
                     await player.queue.add(searchResult.tracks[0]);
                     await player.play();
                     return; // Session continues with the next favorite!
                 } else {
-                    // If this specific URL fails, immediately re-emit queueEnd to skip to the next one
-                    client.lavalink.emit("queueEnd", player, track, payload);
+                    // If all fails, immediately re-emit queueEnd to skip to the next one
+                    client.moonlink.emit("queueEnd", player);
                     return;
                 }
             } catch (error) {
                 console.error(`❌ JIT Favorites error for guild ${guildId}:`, error.message);
-                client.lavalink.emit("queueEnd", player, track, payload);
+                client.moonlink.emit("queueEnd", player);
                 return;
             }
         }
@@ -173,29 +207,67 @@ function registerPlayerEvents(client) {
 
         // If Autoplay is on, fetch the next algorithmic track
         if (isAutoplay && autoplayManager) {
-            try {
-                const config = configManager.get(guildId);
-                if (config.autoplay_seed) {
-                    autoplayManager.seedVideoId = config.autoplay_seed;
-                }
+            let consecutiveFails = 0;
+            const maxFails = 5;
 
-                const artistHistory = player.get('artistHistory') || [];
-                const nextMeta = await autoplayManager.getNextTrack(config, artistHistory);
+            while (consecutiveFails < maxFails) {
+                try {
+                    const config = configManager.get(guildId);
+                    if (config.autoplay_seed) {
+                        autoplayManager.seedVideoId = config.autoplay_seed;
+                    }
 
-                if (nextMeta) {
-                    const searchResult = await player.search(
-                        { query: `${nextMeta.title} ${nextMeta.artists}`, source: 'ytmsearch' },
-                        client.user
-                    );
+                    const artistHistory = player.get('artistHistory') || [];
+                    const nextMeta = await autoplayManager.getNextTrack(config, artistHistory);
 
-                    if (searchResult.tracks && searchResult.tracks.length > 0) {
+                    if (!nextMeta) break; // Buffer empty or fetch failed
+
+                    let searchResult;
+                    let fetchRetries = 0;
+                    while (fetchRetries < 3) {
+                        try {
+                            searchResult = await client.moonlink.search({
+                                query: `${nextMeta.title} ${nextMeta.artists}`,
+                                source: 'ytmsearch',
+                                requester: client.user
+                            });
+                            break; // Success!
+                        } catch (netError) {
+                            console.error(`❌ Network/NodeLink search error for guild ${guildId}:`, netError.message);
+                            fetchRetries++;
+                            if (fetchRetries >= 3) {
+                                const textChannel = client.channels.cache.get(player.textChannelId || player.voiceChannelId);
+                                if (textChannel) {
+                                    textChannel.send('⚠️ **Network Error**: NodeLink could not be reached. Autoplay paused.').catch(()=>{});
+                                }
+                                break;
+                            }
+                            // Exponential Backoff: 2s, 4s, 8s
+                            await new Promise(r => setTimeout(r, 1000 * Math.pow(2, fetchRetries)));
+                        }
+                    }
+
+                    if (fetchRetries >= 3) break; // Break the outer Autoplay loop
+
+                    if (searchResult && searchResult.tracks && searchResult.tracks.length > 0) {
                         await player.queue.add(searchResult.tracks[0]);
                         await player.play();
                         return; // Session continues with algorithmic autoplay!
+                    } else {
+                        console.warn(`⚠️ Autoplay could not resolve track: ${nextMeta.title}. Trying next...`);
+                        consecutiveFails++;
                     }
+                } catch (error) {
+                    console.error(`❌ Autoplay error for guild ${guildId}:`, error.message);
+                    consecutiveFails++;
                 }
-            } catch (error) {
-                console.error(`❌ Autoplay error for guild ${guildId}:`, error.message);
+            }
+
+            if (consecutiveFails >= maxFails) {
+                const textChannel = client.channels.cache.get(player.textChannelId || player.voiceChannelId);
+                if (textChannel) {
+                    textChannel.send('⚠️ Autoplay failed to load tracks repeatedly. Stopping session.').catch(()=>{});
+                }
             }
         }
 
@@ -203,7 +275,7 @@ function registerPlayerEvents(client) {
         const config = configManager.get(guildId);
         if (config.np_message_id) {
             try {
-                const channelId = config.np_channel_id || player.textChannelId;
+                const channelId = player.textChannelId || player.voiceChannelId;
                 const textChannel = client.channels.cache.get(channelId);
                 if (textChannel) {
                     const msg = await textChannel.messages.fetch(config.np_message_id);
@@ -220,8 +292,8 @@ function registerPlayerEvents(client) {
         }
 
         // Clear Activity Status
-        const activePlayers = client.lavalink.players.filter(p => p.playing);
-        if (activePlayers.size === 0) client.user.setActivity();
+        const activePlayers = client.moonlink.players.all.filter(p => p.playing);
+        if (activePlayers.length === 0) client.user.setActivity();
 
         // Cleanup memory for the next session
         if (autoplayManager) autoplayManager.playedIds.clear();
@@ -229,17 +301,39 @@ function registerPlayerEvents(client) {
     });
 
     // ─── Error Handling Improvement ──────────────────────────────────
-    client.lavalink.on("trackError", async (player, track, payload) => {
+    client.moonlink.on("trackException", async (player, track, payload) => {
         console.error(`⚠️ Track error in guild ${player.guildId}:`, payload.error || payload);
+        
+        // Circuit Breaker
+        const tripped = await checkCircuitBreaker(player, client);
+        if (tripped) return;
+
+        const config = configManager.get(player.guildId);
+
+        if (config.verbose_mode === 1) {
+            const channelId = player.textChannelId || player.voiceChannelId;
+            const textChannel = client.channels.cache.get(channelId);
+            if (textChannel) {
+                textChannel.send(`⚠️ Skipped **${track.title}** due to a NodeLink playback error.`).catch(()=>{});
+            }
+        }
 
         // If a track fails, don't just sit there—skip it!
-        if (player.queue.tracks.length > 0 || player.get('autoplay')) {
+        if (player.queue.size > 0) {
             await player.skip();
+        } else if (player.get('autoplay')) {
+            client.moonlink.emit("queueEnd", player);
+        } else {
+            await player.stop();
         }
     });
 
-    client.lavalink.on("trackStuck", async (player, track, payload) => {
+    client.moonlink.on("trackStuck", async (player, track, payload) => {
         console.warn(`⚠️ Track stuck in guild ${player.guildId}. Threshold: ${payload.thresholdMs}ms`);
+
+        // Circuit Breaker
+        const tripped = await checkCircuitBreaker(player, client);
+        if (tripped) return;
 
         // Increment a "stuck counter" in the player metadata
         let stuckCount = player.get('stuck_count') || 0;
@@ -250,7 +344,23 @@ function registerPlayerEvents(client) {
         if (stuckCount >= 2) {
             console.log(`⏩ Track "zombified." Skipping to next...`);
             player.set('stuck_count', 0);
-            await player.skip();
+            const config = configManager.get(player.guildId);
+
+            if (config.verbose_mode === 1) {
+                const channelId = player.textChannelId || player.voiceChannelId;
+                const textChannel = client.channels.cache.get(channelId);
+                if (textChannel) {
+                    textChannel.send(`⚠️ Skipped **${track.title}** because it got stuck repeatedly.`).catch(()=>{});
+                }
+            }
+
+            if (player.queue.size > 0) {
+                await player.skip();
+            } else if (player.get('autoplay')) {
+                client.moonlink.emit("queueEnd", player);
+            } else {
+                await player.stop();
+            }
         }
     });
 }

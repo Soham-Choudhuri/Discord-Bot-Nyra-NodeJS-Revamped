@@ -88,7 +88,7 @@ const AUDIO_CONFIG: AudioConfig = Object.freeze({
   sampleRate: 48000,
   channels: 2,
   frameSize: 960,
-  highWaterMark: 19200
+  highWaterMark: 38400
 })
 
 const BUFFER_THRESHOLDS: BufferThresholds = Object.freeze({
