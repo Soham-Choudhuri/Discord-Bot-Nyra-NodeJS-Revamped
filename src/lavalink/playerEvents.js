@@ -156,6 +156,47 @@ function registerPlayerEvents(client) {
         }
     });
 
+    // ─── Track End Event (History Interception) ──────────────────────
+    client.moonlink.on("trackEnd", (player, track) => {
+        // 0. Skip History Guard (for /stop and /stopafter)
+        if (player.get('skipHistory')) {
+            player.set('skipHistory', false);
+            return;
+        }
+
+        // 1. Identify the true requester
+        // For standard songs: track.requester
+        // For Autoplay songs: they were requested by client.user, so fallback to sessionOwner
+        let userId = track.requester?.id;
+        if (!userId || userId === client.user.id) {
+            userId = player.get('sessionOwner')?.id;
+        }
+
+        if (!userId) return;
+
+        // 2. Extract metadata
+        const videoId = extractVideoId(track.uri);
+        const trackTitle = track.title;
+        const trackAuthor = track.author;
+
+        if (!videoId || !trackTitle || !trackAuthor) return;
+
+        try {
+            // 3. Synchronous Gating Check
+            const prefs = db.prepare('SELECT is_tracking_enabled FROM user_preferences WHERE user_id = ?').get(userId);
+            
+            // 4. Execution
+            if (prefs && prefs.is_tracking_enabled === 1) {
+                db.prepare(`
+                    INSERT INTO track_history (user_id, video_id, track_title, track_author)
+                    VALUES (?, ?, ?, ?)
+                `).run(userId, videoId, trackTitle, trackAuthor);
+            }
+        } catch (error) {
+            console.error(`❌ Track History Insert Error:`, error.message);
+        }
+    });
+
     // ─── Queue End Event (The Autoplay & JIT Engine) ─────────────────
     client.moonlink.on("queueEnd", async (player) => {
         const guildId = player.guildId;

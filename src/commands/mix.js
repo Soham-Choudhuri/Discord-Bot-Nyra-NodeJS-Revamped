@@ -41,6 +41,11 @@ module.exports = {
 
             if (!player.connected) await player.connect();
 
+            // Set session owner for history tracking
+            if (!player.get('sessionOwner')) {
+                player.set('sessionOwner', interaction.user);
+            }
+
             const isUrl = /^https?:\/\//.test(query);
             
             // 1. Resolve the initial seed track

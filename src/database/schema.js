@@ -46,6 +46,26 @@ function initSchema() {
         )
     `).run();
 
+    // --- Persistent Track History ---
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id TEXT PRIMARY KEY,
+            is_tracking_enabled INTEGER DEFAULT 0
+        )
+    `).run();
+
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS track_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            video_id TEXT NOT NULL,
+            track_title TEXT NOT NULL,
+            track_author TEXT NOT NULL,
+            played_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `).run();
+
+
     // Migration for existing tables: Add new columns if they don't exist
     const settingsColumns = db.prepare('PRAGMA table_info(settings)').all();
     const settingsColumnNames = settingsColumns.map(c => c.name);

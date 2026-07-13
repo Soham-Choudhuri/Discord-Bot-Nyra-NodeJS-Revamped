@@ -43,6 +43,11 @@ module.exports = {
             // Ensure the player is connected to the voice channel
             if (!player.connected) await player.connect();
 
+            // Set session owner for history tracking
+            if (!player.get('sessionOwner')) {
+                player.set('sessionOwner', interaction.user);
+            }
+
             // Enforce Max Queue Size from config
             const config = configManager.get(interaction.guildId);
             if (player.queue.size >= config.max_queue_size) {

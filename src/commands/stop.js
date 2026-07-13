@@ -25,6 +25,7 @@ module.exports = {
         if (autoplayManager) autoplayManager.playedIds.clear();
 
         // Stop the current track but STAY in the voice channel
+        player.set('skipHistory', true);
         await player.stop();
         client.user.setActivity();
 

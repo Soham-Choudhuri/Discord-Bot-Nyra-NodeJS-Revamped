@@ -56,6 +56,25 @@ module.exports = {
                     return settingsCommand.execute(interaction, client);
                 }
 
+                // Direct Toggle for Personal History
+                if (setting === 'personal_history') {
+                    const { db } = require('../database/schema');
+                    const userId = interaction.user.id;
+                    const pref = db.prepare('SELECT is_tracking_enabled FROM user_preferences WHERE user_id = ?').get(userId);
+                    const currentState = pref ? pref.is_tracking_enabled : 0;
+                    const newState = currentState === 1 ? 0 : 1;
+                    
+                    db.prepare(`
+                        INSERT INTO user_preferences (user_id, is_tracking_enabled) 
+                        VALUES (?, ?) 
+                        ON CONFLICT(user_id) DO UPDATE SET is_tracking_enabled = ?
+                    `).run(userId, newState, newState);
+
+                    // Refresh the settings dashboard
+                    const settingsCommand = client.commands.get('settings');
+                    return settingsCommand.execute(interaction, client);
+                }
+
                 // Modals for other settings
                 const modal = new ModalBuilder()
                     .setCustomId(`modal_${setting}`)
