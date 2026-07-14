@@ -4,16 +4,18 @@ const { db } = require('../database/schema');
 class AutoplayManager {
     /**
      * @param {string} guildId
+     * @param {string} userId
      * @param {string} mode 'dynamic' or 'static'
      * @param {string} initialVideoId
      */
-    constructor(guildId, mode = 'static', initialVideoId = null) {
+    constructor(guildId, userId, mode = 'static', initialVideoId = null) {
         this.guildId = guildId;
+        this.userId = userId;
         this.mode = mode; 
         this.seedVideoId = initialVideoId;
         this.recentSeeds = initialVideoId ? [initialVideoId] : [];
         
-        // Infinite Memory
+        // Infinite Memory (Local Session)
         this.playedIds = new Set();
         if (initialVideoId) this.playedIds.add(initialVideoId);
         
@@ -72,6 +74,17 @@ class AutoplayManager {
             } catch (e) {
                 // Fallback if regex is broken (shouldn't happen with modal validation)
                 regex = /\b(slowed|reverb|nightcore|remix)\b/i;
+            }
+
+            // Fetch persistent user history to prevent repeating across sessions
+            let persistentHistory = new Set();
+            if (this.userId) {
+                try {
+                    const rows = db.prepare('SELECT video_id FROM track_history WHERE user_id = ?').all(this.userId);
+                    rows.forEach(r => persistentHistory.add(r.video_id));
+                } catch (e) {
+                    console.error('[AutoplayManager] Error fetching track history:', e.message);
+                }
             }
 
             let recoveryAttempts = 0;
@@ -134,9 +147,11 @@ class AutoplayManager {
                         return 0;
                     };
 
+                    const isPlayedOrInHistory = (id) => this.playedIds.has(id) || persistentHistory.has(id);
+
                     // Tier 1: Strict (ATV/OMV + Regex + Artist History)
                     validTracks = tracks.filter(t => {
-                        if (!t.videoId || this.playedIds.has(t.videoId)) return false;
+                        if (!t.videoId || isPlayedOrInHistory(t.videoId)) return false;
                         if (t.videoType !== 'MUSIC_VIDEO_TYPE_ATV' && t.videoType !== 'MUSIC_VIDEO_TYPE_OMV') return false;
                         const searchStr = `${t.title} ${t.artists}`;
                         if (regex.test(searchStr)) return false;
@@ -147,7 +162,7 @@ class AutoplayManager {
                     // Tier 2: Soft Regex (ATV/OMV + Artist History, Ignore Regex)
                     if (validTracks.length === 0) {
                         validTracks = tracks.filter(t => {
-                            if (!t.videoId || this.playedIds.has(t.videoId)) return false;
+                            if (!t.videoId || isPlayedOrInHistory(t.videoId)) return false;
                             if (t.videoType !== 'MUSIC_VIDEO_TYPE_ATV' && t.videoType !== 'MUSIC_VIDEO_TYPE_OMV') return false;
                             if (artistHistory.includes(t.artists)) return false;
                             return true;
@@ -157,7 +172,7 @@ class AutoplayManager {
                     // Tier 3: Desperate (Ignore VideoType & Regex, Only require Artist History)
                     if (validTracks.length === 0) {
                         validTracks = tracks.filter(t => {
-                            if (!t.videoId || this.playedIds.has(t.videoId)) return false;
+                            if (!t.videoId || isPlayedOrInHistory(t.videoId)) return false;
                             if (artistHistory.includes(t.artists)) return false;
                             return true;
                         }); // No need to sort ATV/OMV since this is a desperate fallback

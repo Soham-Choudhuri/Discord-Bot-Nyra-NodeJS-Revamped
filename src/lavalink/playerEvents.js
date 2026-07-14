@@ -187,10 +187,15 @@ function registerPlayerEvents(client) {
             
             // 4. Execution
             if (prefs && prefs.is_tracking_enabled === 1) {
-                db.prepare(`
-                    INSERT INTO track_history (user_id, video_id, track_title, track_author)
-                    VALUES (?, ?, ?, ?)
-                `).run(userId, videoId, trackTitle, trackAuthor);
+                const upsertHistory = db.transaction((userId, videoId, trackTitle, trackAuthor) => {
+                    db.prepare('DELETE FROM track_history WHERE user_id = ? AND video_id = ?').run(userId, videoId);
+                    db.prepare(`
+                        INSERT INTO track_history (user_id, video_id, track_title, track_author)
+                        VALUES (?, ?, ?, ?)
+                    `).run(userId, videoId, trackTitle, trackAuthor);
+                });
+                
+                upsertHistory(userId, videoId, trackTitle, trackAuthor);
             }
         } catch (error) {
             console.error(`❌ Track History Insert Error:`, error.message);

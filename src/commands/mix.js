@@ -122,7 +122,7 @@ module.exports = {
             const AutoplayManager = require('../services/AutoplayManager');
             
             // Start the Autoplay engine with the seed track
-            const autoplayManager = new AutoplayManager(interaction.guildId, 'dynamic', videoId);
+            const autoplayManager = new AutoplayManager(interaction.guildId, interaction.user.id, 'dynamic', videoId);
             player.set('autoplayManager', autoplayManager);
             
             // 4. Pre-fill buffer for seamless continuation (Synchronize before replying to prevent network collision)

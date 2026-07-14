@@ -37,7 +37,7 @@ module.exports = {
             const AutoplayManager = require('../services/AutoplayManager');
             const configManager = require('../services/configManager');
             // Attach the manager directly to the player
-            const autoplayManager = new AutoplayManager(interaction.guildId, mode, currentVideoId);
+            const autoplayManager = new AutoplayManager(interaction.guildId, interaction.user.id, mode, currentVideoId);
             player.set('autoplayManager', autoplayManager);
 
             // Proactively trigger fetch so /queue is instantly populated
