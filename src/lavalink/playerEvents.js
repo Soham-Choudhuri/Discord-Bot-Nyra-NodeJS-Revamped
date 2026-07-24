@@ -97,6 +97,14 @@ function registerPlayerEvents(client) {
             autoplayManager.fillBuffer(config, artistHistory).catch(() => {});
         }
 
+        // --- Loop Notification Guard ---
+        const lastPlayedId = player.get('last_played_track_id');
+        if (player.loop === 'track' && lastPlayedId === videoId) {
+            // Suppress the Now Playing spam if the same track is looping
+            return;
+        }
+        player.set('last_played_track_id', videoId);
+
         // We always try to route the NP message to the Voice Channel's text chat.
         // Fallback to interaction text channel if somehow VC text channel isn't accessible.
         const voiceChannelId = player.voiceChannelId;
@@ -406,6 +414,49 @@ function registerPlayerEvents(client) {
                 client.moonlink.emit("queueEnd", player);
             } else {
                 await player.stop();
+            }
+        }
+    });
+
+    // ─── Custom Watchdog for NodeLink Recovery Loops ─────────────────
+    client.moonlink.on('nodeRaw', async (node, payload) => {
+        if (payload.op === 'playerUpdate') {
+            const guildId = payload.guildId;
+            const player = client.moonlink.players.get(guildId);
+            if (!player || !player.playing || player.paused) return;
+
+            const currentPos = payload.state.position || 0;
+            let posHistory = player.get('nyra_pos_history') || [];
+            
+            posHistory.push(currentPos);
+            if (posHistory.length > 7) posHistory.shift(); // Keep last 7 updates (~14 seconds)
+            
+            player.set('nyra_pos_history', posHistory);
+
+            if (posHistory.length === 7) {
+                const maxPos = Math.max(...posHistory);
+                const minPos = Math.min(...posHistory);
+                
+                // If the stream position advanced by less than 3 seconds over 14 seconds of real time,
+                // the player is completely frozen in an internal recovery loop.
+                if (maxPos - minPos < 3000) {
+                    console.log(`⏩ [Nyra Watchdog] Player in guild ${guildId} is trapped in an infinite recovery loop. Forcing skip.`);
+                    player.set('nyra_pos_history', []); // Clear history so we don't spam skip
+                    
+                    const channelId = player.textChannelId || player.voiceChannelId;
+                    const textChannel = client.channels.cache.get(channelId);
+                    if (textChannel) {
+                        textChannel.send(`⚠️ Audio stream stalled. Bypassing engine loop and skipping track to force recovery...`).catch(()=>{});
+                    }
+                    
+                    if (player.queue.size > 0) {
+                        await player.skip();
+                    } else if (player.get('autoplay')) {
+                        client.moonlink.emit("queueEnd", player);
+                    } else {
+                        await player.stop();
+                    }
+                }
             }
         }
     });

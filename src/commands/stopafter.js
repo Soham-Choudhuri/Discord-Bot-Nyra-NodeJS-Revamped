@@ -20,7 +20,6 @@ module.exports = {
         player.queue.clear();
         player.set('autoplay', false);
         player.set('favoritesQueue', null);
-        player.set('skipHistory', true);
 
         // Delete NP Message
         const config = configManager.get(interaction.guildId);
