@@ -9,9 +9,6 @@ const { registerPlayerEvents } = require('./lavalink/playerEvents');
 const ytmusic = require('./services/ytmusic');
 const { initSchema } = require('./database/schema');
 
-// Initialize Database
-initSchema();
-
 // ─── Discord Client ───────────────────────────────────────────────
 const client = new Client({
     intents: [

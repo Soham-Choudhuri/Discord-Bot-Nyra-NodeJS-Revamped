@@ -108,4 +108,6 @@ function initSchema() {
     console.log('🗄️ Database schema initialized and migrated.');
 }
 
+initSchema();
+
 module.exports = { db, initSchema };
