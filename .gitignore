@@ -1,6 +1,6 @@
 # Dependency directories
 node_modules/
-nodelink/node_modules/
+Nodelink/node_modules/
 
 # Environment variables (Sensitive data)
 .env
@@ -12,10 +12,9 @@ data/
 *.db
 
 # NodeLink specific
-nodelink/dist/
-nodelink/.cache/
-nodelink/po_tokens.jsonl
-nodelink/sabr_traffic.jsonl
+NodeLink/*
+!NodeLink/config.js
+!NodeLink/start-nodelink.bat
 
 # Logs
 logs/

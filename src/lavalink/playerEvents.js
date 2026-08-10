@@ -75,7 +75,7 @@ function registerPlayerEvents(client) {
 
         // We retrieve custom metadata that we will attach to the player in stream.js
         const autoplayManager = player.get('autoplayManager');
-        const videoId = extractVideoId(track.info?.uri);
+        const videoId = extractVideoId(track.uri);
 
         if (autoplayManager && videoId) {
             autoplayManager.addHistory(videoId);
@@ -90,11 +90,6 @@ function registerPlayerEvents(client) {
                 artistHistory.shift();
             }
             player.set('artistHistory', artistHistory);
-        }
-
-        // Proactively fill the Autoplay buffer so `/queue` can display upcoming tracks
-        if (autoplayManager && videoId) {
-            autoplayManager.fillBuffer(config, artistHistory).catch(() => {});
         }
 
         // --- Loop Notification Guard ---
@@ -226,22 +221,31 @@ function registerPlayerEvents(client) {
                 const url = `https://music.youtube.com/watch?v=${nextVideoId}`;
                 let searchResult = await client.moonlink.search({
                     query: url,
-                    source: 'ytmsearch',
                     requester: client.user
                 });
-
-                if (!searchResult.tracks || searchResult.tracks.length === 0) {
-                    // Fallback to plain text search if URL fails (e.g. video deleted or region blocked)
-                    const fav = db.prepare('SELECT track_title, track_author FROM user_favorites WHERE track_url = ?').get(url);
-                    if (fav) {
-                        console.log(`[JIT Favorites] Fallback search for: ${fav.track_title} ${fav.track_author}`);
-                        searchResult = await client.moonlink.search({ query: `${fav.track_title} ${fav.track_author}`, source: 'ytmsearch', requester: client.user });
-                    }
+                        
+                if (searchResult.loadType === 'empty' || searchResult.loadType === 'error') {
+                    // Silenced [JIT Favorites] fallback log to prevent event loop blocking
+                    searchResult = await client.moonlink.search({ query: `${nextVideoId}`, source: 'ytmsearch', requester: client.user });
                 }
 
                 if (searchResult.tracks && searchResult.tracks.length > 0) {
                     await player.queue.add(searchResult.tracks[0]);
+                    
+                    // Strategic Event Loop Yielding & Buffer Priming
+                    // Gives Node.js a moment to flush pending queues AND gives NodeLink half a second to prefetch YouTube audio chunks
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
                     await player.play();
+                    
+                    // The "Play-Paused" UDP Pre-Warm (For the very first track in the session)
+                    if (player.queue.size === 0 && !player.get('nyra_has_warmed_up')) {
+                        player.set('nyra_has_warmed_up', true);
+                        await player.pause();
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        await player.resume();
+                    }
+
                     return; // Session continues with the next favorite!
                 } else {
                     // If all fails, immediately re-emit queueEnd to skip to the next one
@@ -305,7 +309,21 @@ function registerPlayerEvents(client) {
 
                     if (searchResult && searchResult.tracks && searchResult.tracks.length > 0) {
                         await player.queue.add(searchResult.tracks[0]);
+                        
+                        // Strategic Event Loop Yielding & Buffer Priming
+                        // Gives Node.js a moment to flush pending queues AND gives NodeLink half a second to prefetch YouTube audio chunks
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        
                         await player.play();
+                        
+                        // The "Play-Paused" UDP Pre-Warm (For the very first track in the session)
+                        if (player.queue.size === 0 && !player.get('nyra_has_warmed_up')) {
+                            player.set('nyra_has_warmed_up', true);
+                            await player.pause();
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                            await player.resume();
+                        }
+
                         return; // Session continues with algorithmic autoplay!
                     } else {
                         console.warn(`⚠️ Autoplay could not resolve track: ${nextMeta.title}. Trying next...`);
@@ -396,7 +414,7 @@ function registerPlayerEvents(client) {
 
         // If it gets stuck more than twice on the same track, skip it
         if (stuckCount >= 2) {
-            console.log(`⏩ Track "zombified." Skipping to next...`);
+            // Silenced ⏩ Track zombified log to prevent event loop blocking
             player.set('stuck_count', 0);
             const config = configManager.get(player.guildId);
 
@@ -440,8 +458,15 @@ function registerPlayerEvents(client) {
                 // If the stream position advanced by less than 3 seconds over 14 seconds of real time,
                 // the player is completely frozen in an internal recovery loop.
                 if (maxPos - minPos < 3000) {
-                    console.log(`⏩ [Nyra Watchdog] Player in guild ${guildId} is trapped in an infinite recovery loop. Forcing skip.`);
-                    player.set('nyra_pos_history', []); // Clear history so we don't spam skip
+                    const stuckCount = (player.get('stuckCount') || 0) + 1;
+                    player.set('stuckCount', stuckCount);
+
+                    if (stuckCount >= 3) {
+                        // Silenced [Nyra Watchdog] trap loop log to prevent event loop blocking
+                        player.set('stuckCount', 0);
+                        client.moonlink.emit("queueEnd", player);
+                        return;
+                    }
                     
                     const channelId = player.textChannelId || player.voiceChannelId;
                     const textChannel = client.channels.cache.get(channelId);

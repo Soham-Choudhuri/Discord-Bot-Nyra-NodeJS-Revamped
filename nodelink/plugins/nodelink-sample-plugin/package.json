@@ -1,9 +1,0 @@
-{
-  "name": "nodelink-sample-plugin",
-  "version": "1.0.0",
-  "description": "A sample plugin demonstrating the NodeLink Plugin API capabilities",
-  "type": "module",
-  "main": "index.ts",
-  "author": "NodeLink Team",
-  "license": "MIT"
-}

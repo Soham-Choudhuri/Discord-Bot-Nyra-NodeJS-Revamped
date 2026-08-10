@@ -19,7 +19,11 @@ module.exports = {
 
         // lavalink-client automatically handles queue progression on skip
         if (player.queue.size === 0) {
-            await player.stop();
+            if (player.get('autoplay')) {
+                client.moonlink.emit('queueEnd', player);
+            } else {
+                await player.stop();
+            }
         } else {
             await player.skip();
         }

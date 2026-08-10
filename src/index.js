@@ -1,3 +1,4 @@
+process.env.UV_THREADPOOL_SIZE = Math.max(process.env.UV_THREADPOOL_SIZE || 0, 64);
 require('dotenv').config();
 
 const { Client, GatewayIntentBits } = require('discord.js');

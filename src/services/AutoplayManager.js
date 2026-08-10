@@ -6,18 +6,28 @@ class AutoplayManager {
      * @param {string} guildId
      * @param {string} userId
      * @param {string} mode 'dynamic' or 'static'
-     * @param {string} initialVideoId
+     * @param {string|string[]} initialVideoId
      */
     constructor(guildId, userId, mode = 'static', initialVideoId = null) {
         this.guildId = guildId;
         this.userId = userId;
         this.mode = mode; 
-        this.seedVideoId = initialVideoId;
-        this.recentSeeds = initialVideoId ? [initialVideoId] : [];
+        
+        let initialSeed = initialVideoId;
+        if (Array.isArray(initialVideoId) && initialVideoId.length > 0) {
+            // Pick a random track as the active seed, but seed the recent history heavily
+            initialSeed = initialVideoId[Math.floor(Math.random() * initialVideoId.length)];
+            // Randomly select up to 3 seeds for the dynamic engine
+            this.recentSeeds = [...initialVideoId].sort(() => 0.5 - Math.random()).slice(0, 3);
+        } else {
+            this.recentSeeds = initialSeed ? [initialSeed] : [];
+        }
+        
+        this.seedVideoId = initialSeed;
         
         // Infinite Memory (Local Session)
         this.playedIds = new Set();
-        if (initialVideoId) this.playedIds.add(initialVideoId);
+        if (initialSeed) this.playedIds.add(initialSeed);
         
         this.buffer = [];
         this.isFetching = false;
@@ -52,8 +62,12 @@ class AutoplayManager {
         if (this.buffer.length === 0) {
             await this.fillBuffer(config, artistHistory);
         } else if (this.buffer.length <= 1) {
-            // Low water mark: Pre-fetch in background without waiting
-            this.fillBuffer(config, artistHistory).catch(() => {});
+            // Low water mark: Pre-fetch asynchronously after NodeLink UDP pipeline stabilizes (3s delay)
+            if (!this.isFetching) {
+                setTimeout(() => {
+                    this.fillBuffer(config, artistHistory).catch(() => {});
+                }, 3000);
+            }
         }
         
         return this.buffer.shift() || null;
@@ -87,6 +101,8 @@ const normalizeString = (str) => {
             // Fetch persistent user history to prevent repeating across sessions
             let persistentHistoryIds = new Set();
             let persistentHistorySignatures = new Set();
+            let playlistTrackIds = new Set();
+            
             if (this.userId) {
                 try {
                     const rows = db.prepare('SELECT video_id, track_title, track_author FROM track_history WHERE user_id = ?').all(this.userId);
@@ -97,8 +113,15 @@ const normalizeString = (str) => {
                             persistentHistorySignatures.add(sig);
                         }
                     });
+                    
+                    const savedRow = db.prepare('SELECT track_ids FROM user_saved_playlist WHERE user_id = ?').get(this.userId);
+                    if (savedRow) {
+                        const parsedIds = JSON.parse(savedRow.track_ids);
+                        // Support legacy string arrays and new object arrays
+                        parsedIds.forEach(t => playlistTrackIds.add(typeof t === 'string' ? t : t.id));
+                    }
                 } catch (e) {
-                    console.error('[AutoplayManager] Error fetching track history:', e.message);
+                    console.error('[AutoplayManager] Error fetching persistent data:', e.message);
                 }
             }
 
@@ -151,7 +174,7 @@ const normalizeString = (str) => {
                         : this.seedVideoId;
 
                     // Fetch recommendations
-                    const tracks = await ytmusic.getAdvancedUpNexts(activeSeed);
+                    let tracks = await ytmusic.getAdvancedUpNexts(activeSeed);
                     
                     // Filter with Advanced Heuristics (Tiered Fallback System)
                     let validTracks = [];
@@ -164,6 +187,7 @@ const normalizeString = (str) => {
 
                     const isPlayedOrInHistory = (t) => {
                         if (this.playedIds.has(t.videoId) || persistentHistoryIds.has(t.videoId)) return true;
+                        if (playlistTrackIds.has(t.videoId)) return true; // Negative Filtering (Discovery Mode)
                         
                         const sig = `${normalizeString(t.title)}|${normalizeString(t.artists)}`;
                         if (persistentHistorySignatures.has(sig)) return true;
@@ -224,6 +248,15 @@ const normalizeString = (str) => {
                     
                     this.buffer.push(...shuffled.slice(0, 25));
                     this.retryCount = 0;
+
+                    // Force Garbage Collection hints by manually dereferencing massive JSON block objects
+                    shuffled.length = 0;
+                    validTracks.length = 0;
+                    tracks = null;
+
+                    // Execute immediate manual memory sweep if exposed
+                    if (global.gc) global.gc();
+
                     break;
                 } catch(e) {
                     console.error(`[AutoplayManager] Fetch error:`, e.message);

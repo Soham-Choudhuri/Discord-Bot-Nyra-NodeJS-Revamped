@@ -65,6 +65,16 @@ function initSchema() {
         )
     `).run();
 
+    // --- User Saved Playlist ---
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS user_saved_playlist (
+            user_id TEXT PRIMARY KEY,
+            playlist_id TEXT,
+            playlist_name TEXT,
+            track_ids TEXT
+        )
+    `).run();
+
 
     // Migration for existing tables: Add new columns if they don't exist
     const settingsColumns = db.prepare('PRAGMA table_info(settings)').all();
