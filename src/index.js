@@ -1,14 +1,14 @@
-process.env.UV_THREADPOOL_SIZE = Math.max(process.env.UV_THREADPOOL_SIZE || 0, 64);
+process.env.UV_THREADPOOL_SIZE = 8;
 require('dotenv').config();
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, Options } = require('discord.js');
 const { Manager } = require('moonlink.js');
 const { loadCommands } = require('./handlers/commandHandler');
 const { loadEvents } = require('./handlers/eventHandler');
 const { registerLavalinkEvents } = require('./lavalink/lavalinkEvents');
 const { registerPlayerEvents } = require('./lavalink/playerEvents');
 const ytmusic = require('./services/ytmusic');
-const { initSchema } = require('./database/schema');
+require('./database/schema');
 
 // ─── Discord Client ───────────────────────────────────────────────
 const client = new Client({
@@ -17,6 +17,22 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildMessageReactions
     ],
+    makeCache: Options.cacheWithLimits({
+        ...Options.DefaultMakeCacheSettings,
+        MessageManager: 0,
+        PresenceManager: 0,
+        ThreadManager: 0,
+        ReactionManager: 0,
+        ReactionUserManager: 0,
+        GuildMemberManager: {
+            maxSize: 50,
+            keepOverLimit: member => member.id === client.user?.id
+        },
+        UserManager: {
+            maxSize: 50,
+            keepOverLimit: user => user.id === client.user?.id
+        }
+    }),
 });
 
 require('./handlers/antiCrash')(client);
@@ -47,7 +63,7 @@ client.moonlink = new Manager({
 
 // ─── Register Moonlink Node Events ───────────────────────────────
 // We pass the new moonlink manager to your event registrar
-registerLavalinkEvents(client.moonlink);
+registerLavalinkEvents(client.moonlink, client);
 registerPlayerEvents(client);
 client.on("raw", (d) => client.moonlink.packetUpdate(d));
 
@@ -106,3 +122,15 @@ const shutdown = async (signal) => {
 // Listen for termination signals (Ctrl+C in terminal, or PM2 restart commands)
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// ─── Automated Memory Management ──────────────────────────────────
+// Background Sweep: Check memory every 10 minutes and aggressively GC if over 50MB
+setInterval(() => {
+    const memUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+    if (memUsage > 50 && global.gc) {
+        console.log(`\n🧹 [GC] Heap at ${memUsage.toFixed(2)} MB. Forcing background memory sweep...`);
+        global.gc();
+        const newMem = process.memoryUsage().heapUsed / 1024 / 1024;
+        console.log(`🧹 [GC] Sweep complete. Heap reduced to ${newMem.toFixed(2)} MB.\n`);
+    }
+}, 10 * 60 * 1000).unref(); // unref so it doesn't block graceful shutdown

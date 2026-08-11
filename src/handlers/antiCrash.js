@@ -9,9 +9,27 @@ module.exports = (client) => {
     });
 
     // Fired when a synchronous error is thrown and not caught by a try/catch block
-    process.on('uncaughtException', (err, origin) => {
+    process.on('uncaughtException', async (err, origin) => {
         console.error('🛡️ [Anti-Crash] Uncaught Exception:', err);
         console.error('↳ Origin:', origin);
+        
+        console.log('🛑 [Anti-Crash] Initiating emergency graceful shutdown to prevent V8 corruption...');
+        try {
+            if (client.moonlink && client.moonlink.players) {
+                for (const player of client.moonlink.players.all) {
+                    await player.destroy();
+                }
+            }
+            const { db } = require('../database/schema');
+            if (db && db.open) {
+                db.close();
+            }
+            client.destroy();
+        } catch (shutdownError) {
+            console.error('❌ [Anti-Crash] Error during emergency shutdown:', shutdownError);
+        }
+        
+        process.exit(1);
     });
 
     // Fired for background monitor tracing before an exception bubbles up

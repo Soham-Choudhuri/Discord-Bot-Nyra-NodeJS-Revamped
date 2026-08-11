@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags, ComponentType } = require('discord.js');
-const { db } = require('../database/schema');
+const queries = require('../database/queries');
 const configManager = require('../services/configManager');
+const { extractVideoId } = require('../lavalink/playerEvents');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -28,31 +29,17 @@ module.exports = {
         ),
 
     async execute(interaction, client) {
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        
         const userId = interaction.user.id;
         const subcommand = interaction.options.getSubcommand();
-
-        // Fetch user's favorites from the database (Ordered newest to oldest)
-        let savedTracks = [];
-        try {
-            savedTracks = db.prepare('SELECT track_url, track_title, track_author FROM user_favorites WHERE user_id = ? ORDER BY added_at DESC').all(userId);
-        } catch (error) {
-            console.error('❌ DB Error (Favorites fetch):', error.message);
-            return interaction.reply({ content: '❌ A database error occurred.', flags: [MessageFlags.Ephemeral] });
-        }
-
-        if (savedTracks.length === 0) {
-            return interaction.reply({
-                content: '📭 You haven\'t saved any tracks yet! Click the ❤️ button when a song is playing to save it.',
-                flags: [MessageFlags.Ephemeral]
-            });
-        }
 
         // ─── Subcommand: ADD ──────────────────────────────────────────
         if (subcommand === 'add') {
             const player = client.moonlink.players.get(interaction.guildId);
             
             if (!player || !player.current) {
-                return interaction.reply({ content: '❌ Nothing is currently playing.', flags: [MessageFlags.Ephemeral] });
+                return interaction.editReply({ content: '❌ Nothing is currently playing.' });
             }
 
             const track = player.current;
@@ -60,21 +47,35 @@ module.exports = {
             const trackTitle = track.title;
             const trackAuthor = track.author || 'Unknown Artist';
 
-            const existing = db.prepare('SELECT 1 FROM user_favorites WHERE user_id = ? AND track_url = ?').get(userId, trackUrl);
+            const existing = queries.checkFavorite.get(userId, trackUrl);
 
             if (existing) {
-                return interaction.reply({ content: `ℹ️ **${trackTitle}** is already in your favorites!`, flags: [MessageFlags.Ephemeral] });
+                return interaction.editReply({ content: `ℹ️ **${trackTitle}** is already in your favorites!` });
             }
 
             try {
-                db.prepare('INSERT INTO user_favorites (user_id, track_title, track_author, track_url) VALUES (?, ?, ?, ?)').run(
-                    userId, trackTitle, trackAuthor, trackUrl
-                );
-                return interaction.reply({ content: `❤️ Added **${trackTitle}** to your favorites!`, flags: [MessageFlags.Ephemeral] });
+                const videoId = extractVideoId(trackUrl);
+                queries.insertFavorite.run(userId, trackTitle, trackAuthor, trackUrl, videoId);
+                return interaction.editReply({ content: `❤️ Added **${trackTitle}** to your favorites!` });
             } catch (error) {
                 console.error('❌ DB Error (Favorites add):', error.message);
-                return interaction.reply({ content: '❌ Failed to save track due to a database error.', flags: [MessageFlags.Ephemeral] });
+                return interaction.editReply({ content: '❌ Failed to save track due to a database error.' });
             }
+        }
+
+        // Fetch user's favorites from the database (Ordered newest to oldest)
+        let savedTracks = [];
+        try {
+            savedTracks = queries.getFavorites.all(userId);
+        } catch (error) {
+            console.error('❌ DB Error (Favorites fetch):', error.message);
+            return interaction.editReply({ content: '❌ A database error occurred.' });
+        }
+
+        if (savedTracks.length === 0) {
+            return interaction.editReply({
+                content: '📭 You haven\'t saved any tracks yet! Click the ❤️ button when a song is playing to save it.'
+            });
         }
 
         // ─── Subcommand: SEE ──────────────────────────────────────────
@@ -101,7 +102,7 @@ module.exports = {
             embed.setDescription(description)
                 .setFooter({ text: `${savedTracks.length} total tracks saved` });
 
-            return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         // ─── Subcommand: REMOVE ───────────────────────────────────────
@@ -116,61 +117,24 @@ module.exports = {
             }));
 
             const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId('remove_favorite')
+                .setCustomId('fav_remove_menu')
                 .setPlaceholder('Select a track to remove...')
                 .addOptions(options);
 
             const row = new ActionRowBuilder().addComponents(selectMenu);
 
-            const response = await interaction.reply({
+            return interaction.editReply({
                 content: 'Select a track below to remove it from your favorites (showing up to 25 most recent):',
-                components: [row],
-                flags: [MessageFlags.Ephemeral],
-                withResponse: true // Allows us to create a collector
+                components: [row]
             });
-
-            // Create a component collector right here in the command
-            const collector = response.resource.message.createMessageComponentCollector({
-                componentType: ComponentType.StringSelect,
-                time: 60000 // Menu expires in 60 seconds
-            });
-
-            collector.on('collect', async i => {
-                if (i.user.id !== userId) return; // Security check
-
-                const videoIdToRemove = i.values[0];
-
-                try {
-                    db.prepare('DELETE FROM user_favorites WHERE user_id = ? AND track_url = ?').run(userId, videoIdToRemove);
-
-                    // Update the interaction to confirm deletion and remove the dropdown
-                    await i.update({
-                        content: `✅ Track successfully removed from your favorites.`,
-                        components: []
-                    });
-                } catch (error) {
-                    await i.update({ content: '❌ Failed to remove track due to a database error.', components: [] });
-                }
-            });
-
-            collector.on('end', collected => {
-                // If they never clicked anything, clean up the menu
-                if (collected.size === 0) {
-                    interaction.editReply({ content: '⏳ Menu timed out.', components: [] }).catch(() => { });
-                }
-            });
-
-            return;
         }
 
         // ─── Subcommand: STREAM ───────────────────────────────────────
         if (subcommand === 'stream') {
             const voiceChannel = interaction.member?.voice?.channel;
             if (!voiceChannel) {
-                return interaction.reply({ content: '❌ You must be in a voice channel to stream your favorites.', flags: [MessageFlags.Ephemeral] });
+                return interaction.editReply({ content: '❌ You must be in a voice channel to stream your favorites.' });
             }
-
-            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
             const player = client.moonlink.players.create({
                 guildId: interaction.guildId,
@@ -184,7 +148,7 @@ module.exports = {
 
             // Extract just the video IDs (limit to 50 for a single session)
             const injectionLimit = Math.min(savedTracks.length, 50);
-            const tracksToLoad = savedTracks.slice(0, injectionLimit).map(t => t.track_url);
+            const tracksToLoad = savedTracks.slice(0, injectionLimit).map(t => t.video_id || extractVideoId(t.track_url)).filter(Boolean);
 
             await interaction.editReply({ content: `🔄 Initializing your personal playlist...` });
 
@@ -199,6 +163,7 @@ module.exports = {
                     await player.queue.add(result.tracks[0]);
                     
                     if (!player.playing) {
+                        player.set('is_starting', true);
                         await player.play();
                     }
                 } else {

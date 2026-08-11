@@ -1,7 +1,7 @@
 const { EmbedBuilder, ActivityType } = require('discord.js');
 const ytmusic = require('../services/ytmusic');
 const configManager = require('../services/configManager');
-const { db } = require('../database/schema'); // For JIT Fallback search
+const queries = require('../database/queries'); // For JIT Fallback search
 
 /**
  * Extracts the YouTube videoId from a track URI.
@@ -185,20 +185,12 @@ function registerPlayerEvents(client) {
         if (!videoId || !trackTitle || !trackAuthor) return;
 
         try {
-            // 3. Synchronous Gating Check
-            const prefs = db.prepare('SELECT is_tracking_enabled FROM user_preferences WHERE user_id = ?').get(userId);
+            const prefs = queries.getUserPref.get(userId);
             
-            // 4. Execution
             if (prefs && prefs.is_tracking_enabled === 1) {
-                const upsertHistory = db.transaction((userId, videoId, trackTitle, trackAuthor) => {
-                    db.prepare('DELETE FROM track_history WHERE user_id = ? AND video_id = ?').run(userId, videoId);
-                    db.prepare(`
-                        INSERT INTO track_history (user_id, video_id, track_title, track_author)
-                        VALUES (?, ?, ?, ?)
-                    `).run(userId, videoId, trackTitle, trackAuthor);
-                });
-                
-                upsertHistory(userId, videoId, trackTitle, trackAuthor);
+                const trackSignature = track.signature || null;
+                queries.deleteTrackHistory.run(userId, videoId);
+                queries.insertTrackHistory.run(userId, videoId, track.title, track.author, trackSignature);
             }
         } catch (error) {
             console.error(`❌ Track History Insert Error:`, error.message);
@@ -241,9 +233,11 @@ function registerPlayerEvents(client) {
                     // The "Play-Paused" UDP Pre-Warm (For the very first track in the session)
                     if (player.queue.size === 0 && !player.get('nyra_has_warmed_up')) {
                         player.set('nyra_has_warmed_up', true);
-                        await player.pause();
-                        await new Promise(resolve => setTimeout(resolve, 1500));
-                        await player.resume();
+                        (async () => {
+                            await player.pause();
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                            await player.resume();
+                        })();
                     }
 
                     return; // Session continues with the next favorite!
@@ -308,6 +302,10 @@ function registerPlayerEvents(client) {
                     if (fetchRetries >= 3) break; // Break the outer Autoplay loop
 
                     if (searchResult && searchResult.tracks && searchResult.tracks.length > 0) {
+                        // --- Inject Pre-computed E-Core Signature for heuristics ---
+                        if (nextMeta && nextMeta.signature) {
+                            searchResult.tracks[0].signature = nextMeta.signature;
+                        }
                         await player.queue.add(searchResult.tracks[0]);
                         
                         // Strategic Event Loop Yielding & Buffer Priming
@@ -319,9 +317,11 @@ function registerPlayerEvents(client) {
                         // The "Play-Paused" UDP Pre-Warm (For the very first track in the session)
                         if (player.queue.size === 0 && !player.get('nyra_has_warmed_up')) {
                             player.set('nyra_has_warmed_up', true);
-                            await player.pause();
-                            await new Promise(resolve => setTimeout(resolve, 1500));
-                            await player.resume();
+                            (async () => {
+                                await player.pause();
+                                await new Promise(resolve => setTimeout(resolve, 1500));
+                                await player.resume();
+                            })();
                         }
 
                         return; // Session continues with algorithmic autoplay!
@@ -444,29 +444,19 @@ function registerPlayerEvents(client) {
             if (!player || !player.playing || player.paused) return;
 
             const currentPos = payload.state.position || 0;
-            let posHistory = player.get('nyra_pos_history') || [];
+            const lastPos = player.get('last_position') || 0;
+            player.set('last_position', currentPos);
             
-            posHistory.push(currentPos);
-            if (posHistory.length > 7) posHistory.shift(); // Keep last 7 updates (~14 seconds)
-            
-            player.set('nyra_pos_history', posHistory);
+            // If the stream advanced less than 500ms since the last tick (and isn't at the start), it's stalled.
+            if (currentPos > 0 && (currentPos - lastPos) < 500 && (currentPos - lastPos) >= 0) {
+                const stalledTicks = (player.get('stalled_ticks') || 0) + 1;
+                player.set('stalled_ticks', stalledTicks);
 
-            if (posHistory.length === 7) {
-                const maxPos = Math.max(...posHistory);
-                const minPos = Math.min(...posHistory);
-                
-                // If the stream position advanced by less than 3 seconds over 14 seconds of real time,
-                // the player is completely frozen in an internal recovery loop.
-                if (maxPos - minPos < 3000) {
-                    const stuckCount = (player.get('stuckCount') || 0) + 1;
-                    player.set('stuckCount', stuckCount);
-
-                    if (stuckCount >= 3) {
-                        // Silenced [Nyra Watchdog] trap loop log to prevent event loop blocking
-                        player.set('stuckCount', 0);
-                        client.moonlink.emit("queueEnd", player);
-                        return;
-                    }
+                // Wait for ~7 seconds of stalled ticks before forcing recovery
+                if (stalledTicks >= 7) {
+                    player.set('stalled_ticks', 0);
+                    client.moonlink.emit("queueEnd", player);
+                    return;
                     
                     const channelId = player.textChannelId || player.voiceChannelId;
                     const textChannel = client.channels.cache.get(channelId);
@@ -482,6 +472,9 @@ function registerPlayerEvents(client) {
                         await player.stop();
                     }
                 }
+            } else {
+                // Reset stalled ticks if playback is advancing normally
+                player.set('stalled_ticks', 0);
             }
         }
     });

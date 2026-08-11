@@ -6,12 +6,13 @@ module.exports = {
         .setDescription('Skip the currently playing track'),
 
     async execute(interaction, client) {
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
         const player = client.moonlink.players.get(interaction.guildId);
 
         if (!player || !player.playing) {
-            return interaction.reply({
-                content: '❌ Nothing is currently playing.',
-                flags: [MessageFlags.Ephemeral],
+            return interaction.editReply({
+                content: '❌ Nothing is currently playing.'
             });
         }
 
@@ -19,15 +20,11 @@ module.exports = {
 
         // lavalink-client automatically handles queue progression on skip
         if (player.queue.size === 0) {
-            if (player.get('autoplay')) {
-                client.moonlink.emit('queueEnd', player);
-            } else {
-                await player.stop();
-            }
+            await player.stop();
         } else {
             await player.skip();
         }
 
-        await interaction.reply({ content: `⏭️ Skipped: **${skippedTitle}**`, flags: [MessageFlags.Ephemeral] });
+        await interaction.editReply({ content: `⏭️ Skipped: **${skippedTitle}**` });
     },
 };

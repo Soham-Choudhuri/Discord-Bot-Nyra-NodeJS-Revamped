@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'
 const ytmusic = require('../services/ytmusic');
 const configManager = require('../services/configManager');
 const { extractVideoId } = require('../lavalink/playerEvents');
-const { findBestMatch } = require('../utils/searchMatcher');
+const AutoplayManager = require('../services/AutoplayManager');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -58,7 +58,7 @@ module.exports = {
                 if (ytmResults && ytmResults.length > 0) {
                     const tracks = ytmResults.filter(r => r.type === 'SONG' || r.type === 'VIDEO' || !r.type);
                     if (tracks.length > 0) {
-                        const bestMatch = findBestMatch(query, tracks, item => `${item.title} ${item.artists?.map(a => a.name).join(' ') || item.author || ''}`);
+                        const bestMatch = await ytmusic.findBestMatch(query, tracks);
                         if (bestMatch && bestMatch.videoId) {
                             searchParams = { query: `https://music.youtube.com/watch?v=${bestMatch.videoId}`, source: 'ytmsearch' };
                         }
@@ -111,22 +111,27 @@ module.exports = {
             }
 
             await player.queue.add(seedTrack);
-            if (!player.playing) {
+            if (!player.playing && !player.get('is_starting')) {
+                player.set('is_starting', true);
                 // Play-on-Ready delay to allow NodeLink PREFETCH_COUNT to stabilize
-                await new Promise(resolve => setTimeout(resolve, 750));
-                await player.play();
+                (async () => {
+                    await new Promise(resolve => setTimeout(resolve, 750));
+                    await player.play();
+                    player.set('is_starting', false);
+                })();
             }
 
             // 3. Automatically turn ON Autoplay so it natively manages the endless mix
             player.set('autoplay', true);
-            const AutoplayManager = require('../services/AutoplayManager');
             
             // Start the Autoplay engine with the seed track
             const autoplayManager = new AutoplayManager(interaction.guildId, interaction.user.id, 'dynamic', videoId);
             player.set('autoplayManager', autoplayManager);
             
-            // 4. Pre-fill buffer for seamless continuation (Synchronize before replying to prevent network collision)
-            await autoplayManager.fillBuffer(config, player.get('artistHistory') || []);
+            // 4. Pre-fill buffer for seamless continuation asynchronously in the background
+            autoplayManager.fillBuffer(config, player.get('artistHistory') || []).catch(err => {
+                console.error('[Mix] Autoplay buffer background fill failed:', err);
+            });
 
             // 5. Send confirmation embed
             const embed = new EmbedBuilder()

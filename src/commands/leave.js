@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const { getVoiceConnection } = require('@discordjs/voice');
 const configManager = require('../services/configManager');
 
 module.exports = {
@@ -7,14 +8,15 @@ module.exports = {
         .setDescription('Disconnect the bot from the voice channel'),
 
     async execute(interaction, client) {
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        
         const player = client.moonlink.players.get(interaction.guildId);
 
         // Check if the bot is even in a voice channel
         const botVoice = interaction.guild.members.cache.get(client.user.id)?.voice?.channel;
         if (!botVoice && !player) {
-            return interaction.reply({
+            return interaction.editReply({
                 content: '❌ I\'m not in a voice channel.',
-                flags: [MessageFlags.Ephemeral],
             });
         }
 
@@ -23,13 +25,17 @@ module.exports = {
             const autoplayManager = player.get('autoplayManager');
             if (autoplayManager) autoplayManager.playedIds.clear();
             player.set('favoritesQueue', null);
+            player.set('autoplayManager', null);
+            player.set('artistHistory', []);
 
             // This natively stops music, clears the queue, and disconnects the VC
             await player.destroy("Command triggered by user");
-            client.user.setActivity();
+            
+            const activePlayers = client.moonlink.players.all.filter(p => p.playing && p.guildId !== interaction.guildId);
+            if (activePlayers.length === 0) client.user.setActivity();
         } else if (botVoice) {
             // Failsafe: if Discord thinks it's connected but Lavalink doesn't
-            const connection = require('@discordjs/voice').getVoiceConnection(interaction.guildId);
+            const connection = getVoiceConnection(interaction.guildId);
             if (connection) connection.destroy();
         }
 
@@ -46,6 +52,6 @@ module.exports = {
             configManager.set(interaction.guildId, 'np_message_id', null);
         }
 
-        await interaction.reply({ content: '👋 Stopped playback and disconnected from the voice channel.', flags: [MessageFlags.Ephemeral] });
+        await interaction.editReply({ content: '👋 Stopped playback and disconnected from the voice channel.' });
     },
 };

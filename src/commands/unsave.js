@@ -1,19 +1,20 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { db } = require('../database/schema');
+const queries = require('../database/queries');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('unsave')
         .setDescription('Remove your linked YouTube Music playlist.'),
     async execute(interaction) {
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
         const userId = interaction.user.id;
         
-        const row = db.prepare('SELECT * FROM user_saved_playlist WHERE user_id = ?').get(userId);
+        const row = queries.getSavedPlaylist.get(userId);
         if (!row) {
-            return interaction.reply({ content: 'ℹ️ You do not have a saved playlist.', flags: [MessageFlags.Ephemeral] });
+            return interaction.editReply({ content: 'ℹ️ You do not have a saved playlist.' });
         }
 
-        db.prepare('DELETE FROM user_saved_playlist WHERE user_id = ?').run(userId);
-        return interaction.reply({ content: `🗑️ Your saved playlist **${row.playlist_name}** has been removed.`, flags: [MessageFlags.Ephemeral] });
+        queries.deleteFullPlaylist(userId);
+        return interaction.editReply({ content: `🗑️ Your saved playlist **${row.playlist_name}** has been removed.` });
     }
 };

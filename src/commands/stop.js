@@ -7,12 +7,13 @@ module.exports = {
         .setDescription('Stop playback and clear the queue'),
 
     async execute(interaction, client) {
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
         const player = client.moonlink.players.get(interaction.guildId);
 
         if (!player || (!player.playing && player.queue.size === 0)) {
-            return interaction.reply({
+            return interaction.editReply({
                 content: '❌ Nothing is currently playing.',
-                flags: [MessageFlags.Ephemeral],
             });
         }
 
@@ -23,11 +24,16 @@ module.exports = {
 
         const autoplayManager = player.get('autoplayManager');
         if (autoplayManager) autoplayManager.playedIds.clear();
+        
+        player.set('autoplayManager', null);
+        player.set('artistHistory', []);
 
         // Stop the current track but STAY in the voice channel
         player.set('skipHistory', true);
         await player.stop();
-        client.user.setActivity();
+
+        const activePlayers = client.moonlink.players.all.filter(p => p.playing && p.guildId !== interaction.guildId);
+        if (activePlayers.length === 0) client.user.setActivity();
 
         // Delete NP Message
         const config = configManager.get(interaction.guildId);
@@ -42,6 +48,6 @@ module.exports = {
             configManager.set(interaction.guildId, 'np_message_id', null);
         }
 
-        await interaction.reply({ content: '⏹️ Stopped playback and cleared the queue. I\'m still in the channel.', flags: [MessageFlags.Ephemeral] });
+        await interaction.editReply({ content: '⏹️ Stopped playback and cleared the queue. I\'m still in the channel.' });
     },
 };

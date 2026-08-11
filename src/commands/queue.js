@@ -27,11 +27,17 @@ module.exports = {
             });
         }
 
+        // Send Initial Payload Statelessly
+        const payload = this.generateQueuePayload(player, 0, interaction.guild.name);
+        await interaction.reply({ ...payload, withResponse: true });
+    },
+
+    generateQueuePayload(player, page, guildName) {
         const queueTracks = player.queue.all || []; 
         const currentTrack = player.current;
 
         if (!currentTrack) {
-            return interaction.reply({ content: '❌ Nothing is currently playing.', flags: [MessageFlags.Ephemeral] });
+            return { content: '❌ Nothing is currently playing.', embeds: [], components: [], flags: [MessageFlags.Ephemeral] };
         }
 
         // Combine standard queue with autoplay buffer if enabled
@@ -40,7 +46,6 @@ module.exports = {
         const autoplayManager = player.get('autoplayManager');
         
         if (isAutoplay && autoplayManager && autoplayManager.buffer && autoplayManager.buffer.length > 0) {
-            // Show up to 15 upcoming autoplay tracks to prevent massive queue sizes
             const upcomingAutoplay = autoplayManager.buffer.slice(0, 15);
             const mappedAutoplay = upcomingAutoplay.map(t => ({
                 title: t.title,
@@ -52,88 +57,52 @@ module.exports = {
             displayTracks.push(...mappedAutoplay);
         }
 
-        // 2. Pagination Setup
-        let currentPage = 0;
+        // Pagination Setup
         const tracksPerPage = 10;
         const maxPages = Math.ceil(displayTracks.length / tracksPerPage) || 1;
 
-        // 3. Total Time Math (Removed per user request)
+        // Bounds enforcement
+        if (page < 0) page = 0;
+        if (page >= maxPages) page = maxPages - 1;
 
-        // 4. The Embed Generator Function
-        const generateEmbed = (page) => {
-            const start = page * tracksPerPage;
-            const end = start + tracksPerPage;
-            const currentSlice = displayTracks.slice(start, end);
+        const start = page * tracksPerPage;
+        const end = start + tracksPerPage;
+        const currentSlice = displayTracks.slice(start, end);
 
-            const embed = new EmbedBuilder()
-                .setColor('#2b2d31') // Clean, dark Discord-native color
-                .setAuthor({ name: `🎶 Queue for ${interaction.guild.name}` })
-                .setDescription(`**💿 Now Playing**\n${currentTrack.author || 'Unknown'} - ${currentTrack.title} \`[${formatDuration(currentTrack.duration)}]\`\n\n**🔼 Up Next**`)
-                .setFooter({ text: `Page ${page + 1} of ${maxPages}` });
+        const embed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setAuthor({ name: `🎶 Queue for ${guildName}` })
+            .setDescription(`**💿 Now Playing**\n${currentTrack.author || 'Unknown'} - ${currentTrack.title} \`[${formatDuration(currentTrack.duration)}]\`\n\n**🔼 Up Next**`)
+            .setFooter({ text: `Page ${page + 1} of ${maxPages}` });
 
-            if (currentSlice.length > 0) {
-                const trackList = currentSlice.map((track, index) => {
-                    const durationStr = track.isAutoplay ? '♾️ Autoplay' : formatDuration(track.duration);
-                    const artistStr = track.author || 'Unknown';
-                    return `**${start + index + 1}.** ${artistStr} - ${track.title} \`[${durationStr}]\``;
-                }).join('\n');
-                embed.addFields({ name: '\u200b', value: trackList });
-            } else {
-                embed.addFields({ name: '\u200b', value: '*The queue is empty.*' });
-            }
+        if (currentSlice.length > 0) {
+            const trackList = currentSlice.map((track, index) => {
+                const durationStr = track.isAutoplay ? '♾️ Autoplay' : formatDuration(track.duration);
+                const artistStr = track.author || 'Unknown';
+                return `**${start + index + 1}.** ${artistStr} - ${track.title} \`[${durationStr}]\``;
+            }).join('\n');
+            embed.addFields({ name: '\u200b', value: trackList });
+        } else {
+            embed.addFields({ name: '\u200b', value: '*The queue is empty.*' });
+        }
 
-            return embed;
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`queue_prev_${page - 1}`)
+                .setLabel('◀ Previous')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page === 0),
+            new ButtonBuilder()
+                .setCustomId(`queue_next_${page + 1}`)
+                .setLabel('Next ▶')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page === maxPages - 1 || maxPages === 0)
+        );
+
+        return {
+            embeds: [embed],
+            components: maxPages > 1 ? [row] : [],
+            flags: [MessageFlags.Ephemeral]
         };
-
-        // 5. The Buttons Generator Function
-        const generateButtons = (page) => {
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('queue_prev')
-                    .setLabel('◀ Previous')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(page === 0),
-                new ButtonBuilder()
-                    .setCustomId('queue_next')
-                    .setLabel('Next ▶')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(page === maxPages - 1 || maxPages === 0)
-            );
-            return row;
-        };
-
-        // 6. Send Initial Payload
-        const message = await interaction.reply({
-            embeds: [generateEmbed(currentPage)],
-            components: maxPages > 1 ? [generateButtons(currentPage)] : [],
-            flags: [MessageFlags.Ephemeral],
-            withResponse: true
-        });
-
-        if (maxPages <= 1) return; // No need for a collector if there's only 1 page
-
-        // 7. The Interactive Collector (Listens for clicks on this specific message)
-        const collector = message.resource ? message.resource.message.createMessageComponentCollector({ 
-            filter: i => i.user.id === interaction.user.id, // Only the requester can click
-            time: 60000 // Buttons expire after 60 seconds
-        }) : message.createMessageComponentCollector({ 
-            filter: i => i.user.id === interaction.user.id, // Only the requester can click
-            time: 60000 // Buttons expire after 60 seconds
-        });
-
-        collector.on('collect', async (i) => {
-            if (i.customId === 'queue_prev') currentPage--;
-            if (i.customId === 'queue_next') currentPage++;
-
-            await i.update({
-                embeds: [generateEmbed(currentPage)],
-                components: [generateButtons(currentPage)]
-            }).catch(() => {}); // Catch Unknown Message if auto-deleted
-        });
-
-        // 8. Cleanup after 60 seconds to clear Discord API memory
-        collector.on('end', () => {
-            interaction.editReply({ components: [] }).catch(() => {}); // Remove buttons silently
-        });
     }
 };

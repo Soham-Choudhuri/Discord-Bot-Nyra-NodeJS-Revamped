@@ -1,13 +1,13 @@
 export default {
   server: {
-    host: '0.0.0.0',
+    host: '127.0.0.1',
     port: 3000,
-    password: 'youshallnotpass',
+    password: 'nyra_secret_pass',
     useBunServer: false // set to true to use Bun.serve websocket (experimental)
   },
   cluster: {
     enabled: true, // active cluster (or use env CLUSTER_ENABLED)
-    workers: 0, // 0 => uses os.cpus().length, or specify a number (1 = 2 processes total: master + 1 worker)
+    workers: 1, // 0 => uses os.cpus().length, or specify a number (1 = 2 processes total: master + 1 worker)
     minWorkers: 1, // Minimum workers to keep alive (improves availability during bursts)
     runtime: {
       workerMaxOldSpaceMb: 0, // 0 disables override; set >0 to pass --max-old-space-size to playback workers
@@ -50,7 +50,7 @@ export default {
     }
   },
   logging: {
-    level: 'debug',
+    level: 'info',
     file: {
       enabled: false,
       path: 'logs',
@@ -59,14 +59,14 @@ export default {
     },
     debug: {
       all: false,
-      request: true,
-      session: true,
-      player: true,
-      filters: true,
-      sources: true,
-      lyrics: true,
-      youtube: true,
-      'youtube-cipher': true,
+      request: false,
+      session: false,
+      player: false,
+      filters: false,
+      sources: false,
+      lyrics: false,
+      youtube: false,
+      'youtube-cipher': false,
       sabr: false,
       potoken: false
     }
@@ -110,25 +110,27 @@ export default {
   },
   filters: {
     enabled: {
-      tremolo: true,
-      vibrato: true,
-      lowpass: true,
-      highpass: true,
-      rotation: true,
-      karaoke: true,
-      distortion: true,
-      channelMix: true,
+      tremolo: false,
+      vibrato: false,
+      lowpass: false,
+      highpass: false,
+      rotation: false,
+      karaoke: false,
+      distortion: false,
+      channelMix: false,
       equalizer: true,
-      chorus: true,
-      compressor: true,
-      echo: true,
-      phaser: true,
+      chorus: false,
+      compressor: false,
+      echo: false,
+      phaser: false,
       timescale: true
     }
   },
   defaultSearchSource: ['youtube', 'spotify'],
   unifiedSearchSources: ['youtube', 'spotify'],
   sources: {
+    deezer: { enabled: false },
+    vimeo: { enabled: false },
     vkmusic: {
       enabled: false,
       userToken: '', // (optional) get from vk in browser devtools -> reqs POST /?act=web_token HTTP/2 - headers -> response -> access_token
@@ -531,7 +533,7 @@ export default {
     quality: 'high', // high, medium, low, lowest
     bufferDurationMs: 400, // Explicitly attempt to expand Opus packet buffer to prevent microstutters
     encryption: 'aead_aes256_gcm_rtpsize',
-    resamplingQuality: 'medium', // best, medium, fastest, zero order holder, linear
+    resamplingQuality: 'fastest', // best, medium, fastest, zero order holder, linear
     loudnessNormalizer: false, // Enable/disable AGC globally
     lookaheadMs: 5, // Limiter lookahead buffer in milliseconds
     gateThresholdLUFS: -60, // Silence threshold for AGC gate

@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const configManager = require('../services/configManager');
 const ytmusic = require('../services/ytmusic');
-const { findBestMatch } = require('../utils/searchMatcher');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -67,7 +66,8 @@ module.exports = {
                     // Filter to ensure we only process tracks (if ytmusic-api returns mixed types, it's safer)
                     const tracks = ytmResults.filter(r => r.type === 'SONG' || r.type === 'VIDEO' || !r.type);
                     if (tracks.length > 0) {
-                        const bestMatch = findBestMatch(query, tracks, item => `${item.title} ${item.artists?.map(a => a.name).join(' ') || item.author || ''}`);
+                        // Offload heavy Levenshtein string matching to E-Cores
+                        const bestMatch = await ytmusic.findBestMatch(query, tracks);
                         if (bestMatch && bestMatch.videoId) {
                             searchParams = { query: `https://music.youtube.com/watch?v=${bestMatch.videoId}`, source: 'ytmsearch' };
                         }
@@ -115,9 +115,15 @@ module.exports = {
                     break;
                 }
                 case 'playlist': {
+                    const remainingSlots = config.max_queue_size - player.queue.size;
                     tracksToAdd = result.tracks;
+                    if (tracksToAdd.length > remainingSlots) {
+                        tracksToAdd = tracksToAdd.slice(0, remainingSlots);
+                        embedDesc = `**${result.playlistInfo?.name || 'Unknown Playlist'}** — ${tracksToAdd.length} track(s)\n⚠️ *Playlist truncated to respect queue limit.*`;
+                    } else {
+                        embedDesc = `**${result.playlistInfo?.name || 'Unknown Playlist'}** — ${tracksToAdd.length} track(s)`;
+                    }
                     embedTitle = '📋 Playlist Queued';
-                    embedDesc = `**${result.playlistInfo?.name || 'Unknown Playlist'}** — ${tracksToAdd.length} track(s)`;
                     break;
                 }
                 default: {
@@ -129,10 +135,15 @@ module.exports = {
             await player.queue.add(tracksToAdd);
 
             // If nothing is playing, tell the player to start immediately
-            if (!player.playing) {
+            if (!player.playing && !player.get('is_starting')) {
+                player.set('is_starting', true);
+                
                 // Play-on-Ready delay to allow NodeLink PREFETCH_COUNT to stabilize
-                await new Promise(resolve => setTimeout(resolve, 750));
-                await player.play();
+                (async () => {
+                    await new Promise(resolve => setTimeout(resolve, 750));
+                    await player.play();
+                    player.set('is_starting', false);
+                })();
             }
 
             // Send confirmation embed

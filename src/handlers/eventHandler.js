@@ -10,22 +10,37 @@ function loadEvents(client) {
     const eventsPath = path.join(__dirname, '..', 'events');
     const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
+    let loadedCount = 0;
     for (const file of eventFiles) {
-        const event = require(path.join(eventsPath, file));
+        try {
+            const event = require(path.join(eventsPath, file));
 
-        if (!event.name || !event.execute) {
-            console.warn(`⚠️  Event file ${file} is missing 'name' or 'execute'. Skipping.`);
+            if (!event.name || !event.execute) {
+                console.warn(`⚠️  Event file ${file} is missing 'name' or 'execute'. Skipping.`);
+                continue;
+            }
+
+            const wrapper = async (...args) => {
+                try {
+                    await event.execute(...args, client);
+                } catch (error) {
+                    console.error(`❌ [Event Error] ${event.name}:`, error);
+                }
+            };
+
+            if (event.once) {
+                client.once(event.name, wrapper);
+            } else {
+                client.on(event.name, wrapper);
+            }
+            loadedCount++;
+        } catch (error) {
+            console.error(`Failed to load event ${file}`);
             continue;
-        }
-
-        if (event.once) {
-            client.once(event.name, (...args) => event.execute(...args, client));
-        } else {
-            client.on(event.name, (...args) => event.execute(...args, client));
         }
     }
 
-    console.log(`📡 Loaded ${eventFiles.length} event listeners.`);
+    console.log(`📡 Loaded ${loadedCount} event listeners.`);
 }
 
 module.exports = { loadEvents };

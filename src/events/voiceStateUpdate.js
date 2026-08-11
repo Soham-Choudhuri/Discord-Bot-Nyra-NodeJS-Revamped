@@ -1,7 +1,6 @@
 const { Events } = require('discord.js');
 
-// Store disconnect timeouts per guild
-const disconnectTimers = new Map();
+
 
 module.exports = {
     name: Events.VoiceStateUpdate,
@@ -15,6 +14,21 @@ module.exports = {
         // If there's no active player, we don't need to track timeouts
         if (!player) return;
 
+        // Forced Disconnect Trap: If the bot itself was kicked/disconnected by an admin
+        if (oldState.member.id === client.user.id && !newState.channelId) {
+            console.log(`⚠️ Bot forcefully disconnected in ${guildId}. Tearing down player session...`);
+            const existingTimer = player.get('disconnect_timer');
+            if (existingTimer) clearTimeout(existingTimer);
+            
+            player.set('autoplayManager', null);
+            player.set('artistHistory', null);
+            player.set('favoritesQueue', null);
+            player.set('disconnect_timer', null);
+            
+            await player.destroy();
+            return;
+        }
+
         // Only care about the bot's voice channel
         const botMember = oldState.guild.members.cache.get(client.user.id);
         if (!botMember?.voice?.channel) return;
@@ -26,28 +40,27 @@ module.exports = {
 
         if (humanMembers === 0) {
             // Bot is alone — start a 2-minute disconnect timer
-            if (disconnectTimers.has(guildId)) return;
+            const existingTimer = player.get('disconnect_timer');
+            if (existingTimer) return;
 
             console.log(`⏳ Bot alone in ${voiceChannel.name} (${guildId}). Disconnecting in 2 minutes...`);
 
             const timer = setTimeout(async () => {
-                disconnectTimers.delete(guildId);
-
-                // Fetch the player again in case a user destroyed it manually during the timeout
                 const activePlayer = client.moonlink.players.get(guildId);
                 if (activePlayer) {
-                    // Destroy player and leave the channel
+                    activePlayer.set('disconnect_timer', null);
                     await activePlayer.destroy('Channel empty for 2 minutes');
                     console.log(`👋 Auto-disconnected from ${guildId} (empty channel).`);
                 }
             }, 2 * 60 * 1000);
 
-            disconnectTimers.set(guildId, timer);
+            player.set('disconnect_timer', timer);
         } else {
             // Someone is in the channel — cancel the timer if it's running
-            if (disconnectTimers.has(guildId)) {
-                clearTimeout(disconnectTimers.get(guildId));
-                disconnectTimers.delete(guildId);
+            const existingTimer = player.get('disconnect_timer');
+            if (existingTimer) {
+                clearTimeout(existingTimer);
+                player.set('disconnect_timer', null);
                 console.log(`✅ Disconnect timer cancelled for ${guildId}.`);
             }
         }

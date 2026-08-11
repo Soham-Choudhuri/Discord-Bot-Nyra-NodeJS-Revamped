@@ -16,6 +16,7 @@
     "discord.js": "^14.26.4",
     "dotenv": "^17.4.2",
     "moonlink.js": "^5.2.0",
+    "piscina": "^5.3.0",
     "ytmusic-api": "^5.3.1"
   },
   "devDependencies": {

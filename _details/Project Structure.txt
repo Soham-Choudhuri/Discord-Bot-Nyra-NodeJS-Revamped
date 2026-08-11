@@ -6,47 +6,68 @@ Discord-Bot-Nyra-NodeJS
 │   ├── Project Development Plan.txt
 │   ├── Project Structure.txt
 │   └── Updates.txt
-│
+├── _logs
+│   └── Nodelink.log
+├── .moonlink
+│   └── data
+│       ├── data.1436000845056573592.json
+│       └── data.1436000845056573592.wal
 ├── data
-│   ├── nyra.db
-│   ├── nyra.db-shm
-│   └── nyra.db-wal
-│
+│   └── nyra.db
+├── docs
+│   ├── Changelog.md
+│   └── Improvements.md
 ├── src
 │   ├── commands
 │   │   ├── autoplay.js (Updated)
+│   │   ├── favorites.js (Updated)
+│   │   ├── history.js (Updated)
 │   │   ├── leave.js (Updated)
+│   │   ├── mix.js (Updated)
 │   │   ├── queue.js (Updated)
+│   │   ├── repeat.js (Updated)
+│   │   ├── save.js (Updated)
 │   │   ├── settings.js (Updated)
 │   │   ├── skip.js (Updated)
 │   │   ├── stop.js (Updated)
 │   │   ├── stopafter.js (Updated)
-│   │   └── stream.js (Updated)
+│   │   ├── stream.js (Updated)
+│   │   ├── unsave.js (Updated)
+│   │   └── view.js (Updated)
 │   ├── database
-│   │   └── schema.js
+│   │   ├── schema.js (Updated)
+│   │   └── queries.js (Updated)
 │   ├── events
-│   │   ├── interactionCreate.js
+│   │   ├── interactionCreate.js (Updated)
 │   │   ├── ready.js (Updated)
 │   │   └── voiceStateUpdate.js (Updated)
 │   ├── handlers
-│   │   ├── commandHandler.js
-│   │   └── eventHandler.js
+│   │   ├── antiCrash.js (Updated)
+│   │   ├── commandHandler.js (Updated)
+│   │   └── eventHandler.js (Updated)
 │   ├── lavalink
 │   │   ├── lavalinkEvents.js (Updated)
 │   │   └── playerEvents.js (Updated)
 │   ├── services
-│   │   ├── AutoplayManager.js
-│   │   ├── configManager.js
-│   │   └── ytmusic.js
+│   │   ├── AutoplayManager.js (Updated)
+│   │   ├── configManager.js (Updated)
+│   │   └── ytmusic.js (Updated)
 │   ├── tests
-│   │   ├── test.js
-│   │   └── test_path.js
+│   │   ├── test_path.js
+│   │   └── test.js
 │   ├── utils
-│   │   └── deleteTimer.js
+│   │   ├── deleteTimer.js (Updated)
+│   │   └── searchMatcher.js (Updated)
+│   ├── workers
+│   │   └── ytmusicWorker.js (Updated)
 │   └── index.js (Updated)
-│
 ├── .env
+├── .gitattributes
+├── .gitignore
+├── cont.json
+├── generate_tree.js
 ├── npm run dev.command
 ├── package-lock.json
-├── package.json
-└── start.bat
+├── package.json (Updated)
+├── README.md
+└── test_ytm.js

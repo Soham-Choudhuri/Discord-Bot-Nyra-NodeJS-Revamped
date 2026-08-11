@@ -7,18 +7,21 @@ module.exports = {
         .setDescription('Wait for the current song to finish, then stop and clear the queue'),
 
     async execute(interaction, client) {
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
         const player = client.moonlink.players.get(interaction.guildId);
 
         if (!player || !player.playing) {
-            return interaction.reply({
+            return interaction.editReply({
                 content: '❌ Nothing is currently playing.',
-                flags: [MessageFlags.Ephemeral],
             });
         }
 
         // Clear the upcoming tracks and disable autoplay
         player.queue.clear();
         player.set('autoplay', false);
+        player.set('autoplayManager', null);
+        player.set('artistHistory', []);
         player.set('favoritesQueue', null);
 
         // Delete NP Message
@@ -34,6 +37,6 @@ module.exports = {
             configManager.set(interaction.guildId, 'np_message_id', null);
         }
 
-        await interaction.reply({ content: '⏳ **Lazy Stop**: Current song will finish, then playback will stop and queue will be cleared.', flags: [MessageFlags.Ephemeral] });
+        await interaction.editReply({ content: '⏳ **Lazy Stop**: Current song will finish, then playback will stop and queue will be cleared.' });
     },
 };

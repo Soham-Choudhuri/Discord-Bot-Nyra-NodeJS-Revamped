@@ -13,18 +13,32 @@ async function autoDelete(target, guildId) {
         
         // delete_timer is in seconds, 0 means disabled
         if (config.delete_timer > 0) {
+            let messageId;
+            let channelId = target.channelId;
+            const client = target.client;
+
+            // Resolve the actual message ID to prevent holding the heavy Interaction/Message object
+            if (target.deleteReply && typeof target.deleteReply === 'function') {
+                try {
+                    const replyMsg = await target.fetchReply();
+                    messageId = replyMsg.id;
+                } catch {
+                    return; // Ephemeral or missing
+                }
+            } else {
+                messageId = target.id;
+            }
+
+            if (!messageId || !channelId || !client) return;
+
             setTimeout(async () => {
                 try {
-                    // If it's a message
-                    if (target.delete && typeof target.delete === 'function' && target.deletable) {
-                        await target.delete();
-                    } 
-                    // If it's an interaction
-                    else if (target.deleteReply && typeof target.deleteReply === 'function') {
-                        await target.deleteReply();
+                    const channel = client.channels.cache.get(channelId);
+                    if (channel) {
+                        await channel.messages.delete(messageId);
                     }
                 } catch (e) {
-                    // Message might already be deleted or is ephemeral
+                    // Message might already be deleted
                 }
             }, config.delete_timer * 1000);
         }

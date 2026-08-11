@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const configManager = require('../services/configManager');
-const { db } = require('../database/schema');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,9 +10,6 @@ module.exports = {
     async execute(interaction, client) {
         const guildId = interaction.guildId;
         const config = configManager.get(guildId);
-
-        const pref = db.prepare('SELECT is_tracking_enabled FROM user_preferences WHERE user_id = ?').get(interaction.user.id);
-        const isHistoryEnabled = pref && pref.is_tracking_enabled === 1;
 
         const embed = new EmbedBuilder()
             .setColor(0x7C3AED)
@@ -26,7 +22,6 @@ module.exports = {
                 { name: '⏳ Auto-Delete Timer', value: config.delete_timer > 0 ? `\`${config.delete_timer}s\`` : '`Disabled`', inline: true },
                 { name: '🔒 Command Channel', value: config.cmd_channel ? `<#${config.cmd_channel}>` : '`No Restriction`', inline: true },
                 { name: '🧠 Artist Memory', value: `\`${config.artist_memory}\` unique artists`, inline: true },
-                { name: '🕰️ Personal Track History', value: isHistoryEnabled ? '`Enabled`' : '`Disabled`', inline: true },
                 { name: '🚫 Regex Blacklist', value: `\`${config.regex_blacklist.length > 50 ? config.regex_blacklist.substring(0, 47) + '...' : config.regex_blacklist}\``, inline: true },
             )
             .setTimestamp();
@@ -78,12 +73,6 @@ module.exports = {
                             description: 'Set a custom permanent seed for the autoplay algorithm.',
                             value: 'autoplay_seed',
                             emoji: '♾️'
-                        },
-                        {
-                            label: 'Personal Track History',
-                            description: 'Toggle your personal track history logging.',
-                            value: 'personal_history',
-                            emoji: '🕰️'
                         }
                     ]),
             );

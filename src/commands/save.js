@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, MessageFlags, EmbedBuilder } = require('discord.js');
-const { db } = require('../database/schema');
+const queries = require('../database/queries');
 const { extractVideoId } = require('../lavalink/playerEvents');
-const { getPlaylistTracks, search: ytmSearch } = require('../services/ytmusic');
+const { getPlaylistTracks } = require('../services/ytmusic');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,7 +18,6 @@ module.exports = {
         const userId = interaction.user.id;
 
         if (url) {
-            // Strict regex for YouTube Music playlist (also accept standard YouTube if needed, but restrict to playlist)
             const playlistRegex = /^https?:\/\/(music\.|www\.)?youtube\.com\/playlist\?list=([a-zA-Z0-9_-]+)/;
             const match = url.match(playlistRegex);
             if (!match) {
@@ -28,27 +27,43 @@ module.exports = {
             const playlistId = match[2];
             
             try {
-                // Use robust YouTube Music internal API to extract the full playlist via continuation tokens
-                const tracks = await getPlaylistTracks(playlistId);
+                const playlistName = 'Saved Playlist';
+                let totalTracks = 0;
 
-                if (tracks.length === 0) {
+                let tracks = await getPlaylistTracks(playlistId);
+                const originalLength = tracks.length;
+                
+                // Enforce 500 track upper limit to prevent V8 memory bloat
+                if (tracks.length > 500) {
+                    tracks = tracks.slice(0, 500);
+                }
+                
+                totalTracks = tracks.length;
+
+                if (totalTracks > 0) {
+                    // Upsert playlist metadata
+                    queries.upsertPlaylistMeta.run(userId, playlistId, playlistName);
+                    
+                    // Clear existing tracks
+                    queries.deletePlaylistTracks.run(userId);
+
+                    // Fast bulk insert using centralized transaction
+                    queries.insertPlaylistTracksBulk(userId, tracks);
+                }
+
+                if (totalTracks === 0) {
                     return interaction.editReply('❌ Playlist is empty, private, or could not be loaded.');
                 }
 
-                // Since getPlaylistTracks fetches from a playlist context, we might not always have the exact playlist name readily available in the tracks array.
-                // We default to Saved Playlist, or you could do an extra fetch to get the playlist metadata if absolutely needed.
-                const playlistName = 'Saved Playlist';
-
-                const upsert = db.transaction(() => {
-                    db.prepare('DELETE FROM user_saved_playlist WHERE user_id = ?').run(userId);
-                    db.prepare('INSERT INTO user_saved_playlist (user_id, playlist_id, playlist_name, track_ids) VALUES (?, ?, ?, ?)').run(userId, playlistId, playlistName, JSON.stringify(tracks));
-                });
-                upsert();
+                let embedDesc = `Your playlist has been linked to your account!\nContains ${totalTracks} tracks.`;
+                if (originalLength > 500) {
+                    embedDesc += `\n\n⚠️ *Playlist was truncated from ${originalLength} tracks to fit the 500-track system limit.*`;
+                }
 
                 const embed = new EmbedBuilder()
                     .setColor(0x7C3AED)
                     .setTitle('💾 Playlist Saved')
-                    .setDescription(`Your playlist has been linked to your account!\nContains ${tracks.length} tracks.`)
+                    .setDescription(embedDesc)
                     .setFooter({ text: 'It will now be used automatically when you start an empty /autoplay session.' });
 
                 return interaction.editReply({ embeds: [embed] });
@@ -58,7 +73,6 @@ module.exports = {
                 return interaction.editReply('❌ An error occurred while fetching the playlist.');
             }
         } else {
-            // No URL provided: append current track to saved playlist
             const player = client.moonlink.players.get(interaction.guildId);
             if (!player || !player.playing) {
                 return interaction.editReply('❌ You must either provide a playlist URL, or be playing a track to add it to your saved playlist.');
@@ -70,37 +84,18 @@ module.exports = {
                 return interaction.editReply('❌ Could not extract a valid YouTube ID from the current track.');
             }
 
-            const row = db.prepare('SELECT * FROM user_saved_playlist WHERE user_id = ?').get(userId);
+            const row = queries.getSavedPlaylist.get(userId);
             if (!row) {
                 return interaction.editReply('❌ You do not have a saved playlist. Use `/save <url>` first to link one.');
             }
 
-            let trackObjects = [];
-            try {
-                trackObjects = JSON.parse(row.track_ids);
-            } catch(e) { }
+            const result = queries.insertPlaylistTrack.run(
+                userId, videoId, currentTrack.title || 'Unknown Title', currentTrack.author || 'Unknown Artist'
+            );
 
-            // Ensure we handle legacy migrations where tracks were just strings
-            if (trackObjects.length > 0 && typeof trackObjects[0] === 'string') {
-                // In-memory conversion for the current session (full migration not necessary unless wanted)
-                trackObjects = trackObjects.map(id => ({ id, title: 'Unknown Title', artist: 'Unknown Artist' }));
-            }
-
-            if (trackObjects.find(t => t.id === videoId)) {
+            if (result.changes === 0) {
                 return interaction.editReply(`ℹ️ **${currentTrack.title}** is already in your saved playlist.`);
             }
-
-            trackObjects.push({ 
-                id: videoId, 
-                title: currentTrack.title || 'Unknown Title', 
-                artist: currentTrack.author || 'Unknown Artist' 
-            });
-            db.prepare('UPDATE user_saved_playlist SET track_ids = ? WHERE user_id = ?').run(JSON.stringify(trackObjects), userId);
-
-            // Remove the track from Playback History since it is now permanently saved
-            try {
-                db.prepare('DELETE FROM track_history WHERE user_id = ? AND video_id = ?').run(userId, videoId);
-            } catch(e) { }
 
             return interaction.editReply(`✅ Added **${currentTrack.title}** to your local saved playlist (**${row.playlist_name}**).`);
         }

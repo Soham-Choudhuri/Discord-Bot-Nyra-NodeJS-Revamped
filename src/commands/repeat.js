@@ -15,12 +15,13 @@ module.exports = {
                 )),
 
     async execute(interaction, client) {
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
         const player = client.moonlink.players.get(interaction.guildId);
 
-        if (!player) {
-            return interaction.reply({
-                content: '❌ There is no active player in this server.',
-                flags: [MessageFlags.Ephemeral],
+        if (!player || (!player.playing && player.queue.size === 0)) {
+            return interaction.editReply({
+                content: '❌ Nothing is currently playing.',
             });
         }
 
@@ -31,6 +32,7 @@ module.exports = {
 
         let icon = '▶️';
         let text = 'Disabled';
+        let extraNote = '';
         
         if (mode === 'track') {
             icon = '🔂';
@@ -40,9 +42,14 @@ module.exports = {
             text = 'Queue Loop';
         }
 
-        await interaction.reply({ 
-            content: `${icon} Repeat mode set to: **${text}**`, 
-            flags: [MessageFlags.Ephemeral] 
+        if (mode !== 'off' && player.get('autoplay')) {
+            player.set('autoplay', false);
+            player.set('autoplayManager', null);
+            extraNote = '\n*(Autoplay has been disabled to allow looping)*';
+        }
+
+        await interaction.editReply({ 
+            content: `${icon} Repeat mode set to: **${text}**${extraNote}` 
         });
     },
 };
