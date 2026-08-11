@@ -70,7 +70,7 @@ module.exports = {
                 .setColor(0x7C3AED)
                 .setAuthor({ name: `🕰️ ${interaction.user.displayName}'s Playback History`, iconURL: interaction.user.displayAvatarURL() })
                 .setDescription(`*Status: ${isEnabled ? '✅ Logging Enabled' : '⏸️ Logging Disabled'}*\n\n` + 
-                    tracks.map((t, i) => `**${i + 1}.** [${t.track_title}](https://music.youtube.com/watch?v=${t.video_id}) — ${t.track_author}`).join('\n')
+                    tracks.map((t, i) => `**${tracks.length - i}.** [${t.track_title}](https://music.youtube.com/watch?v=${t.video_id}) — ${t.track_author}`).join('\n')
                 )
                 .setFooter({ text: 'Showing the last 15 played tracks' })
                 .setTimestamp();

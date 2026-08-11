@@ -30,6 +30,9 @@ module.exports = {
             return t;
         });
 
+        // Reverse to show newest added tracks first
+        tracks = tracks.reverse();
+
         // Pagination Config
         const ITEMS_PER_PAGE = 15;
         const totalPages = Math.ceil(tracks.length / ITEMS_PER_PAGE);
@@ -40,7 +43,7 @@ module.exports = {
             const end = start + ITEMS_PER_PAGE;
             const slice = tracks.slice(start, end);
 
-            const description = slice.map((t, idx) => `**${start + idx + 1}.** ${t.title} - *${t.artist}*`).join('\n');
+            const description = slice.map((t, idx) => `**${tracks.length - (start + idx)}.** ${t.title} - *${t.artist}*`).join('\n');
 
             return new EmbedBuilder()
                 .setColor(0x7C3AED)

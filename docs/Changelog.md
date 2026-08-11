@@ -172,3 +172,18 @@ This update introduces "Discovery Mode" and a revolutionary event-loop manipulat
 - **Explicit V8 Garbage Collection**: The Discord Bot now boots with the internal Node.js `--expose-gc` flag. Immediately after dropping heavy JSON payloads (such as parsing 176-track playlists), the bot manually triggers a memory sweep. This permanently prevents the V8 engine from executing "stop-the-world" idle sweeps during active audio playback.
 - **Audio Engine Migration (NodeLink v3.8.0)**: Fully upgraded and compiled the standalone NodeLink backend. We optimized the C++ Opus encoder by reducing the `resamplingQuality` to `medium` and tightened the UDP packet buffer down to `400ms`. This effectively slices the CPU overhead exponentially and stops all single-song stuttering on weak hardware.
 - **"Play-Paused" UDP Pre-Warm**: Introduced a deliberate 1.5-second silent handshake inside `playerEvents.js` for the very first track in any session. This gives NodeLink a guaranteed silent window to JIT-compile the audio loops and stabilize the Discord UDP connection before blasting packets, completely neutralizing cold-start stuttering.
+
+## Update 10: Accessibility Update
+
+This update polishes the user interface for list management and vastly improves the dynamism and targeted control of the Autoplay engine.
+
+### 1. Smart UI Numbering (Reverse-Chronological)
+- **Chronological Sorting**: The `/history view` and `/view` (playlist) interfaces now inherently sort in reverse chronological order (newest tracks appear at the top).
+- **Dynamic Indexing**: The numbered lists now count *downwards* to reflect their true chronological insertion position (e.g. if you have 25 tracks, the newest track will be numbered as #25 at the top, down to #1 at the bottom).
+
+### 2. Auto-Wipe History
+- **Database Sweeping**: Whenever a user executes `/save` on the currently playing track, the engine executes a silent `DELETE` command in the background against their local `track_history` database. This ensures their personal history log remains pristine and free of duplicates for tracks they have already archived.
+
+### 3. Hyper-Dynamic Autoplay (Discovery Mode)
+- **Global Seed Iteration**: The `AutoplayManager` engine has been entirely rewritten for Discovery Mode. Instead of picking a single seed and drifting into YouTube's algorithm, the engine now caches the user's complete playlist array in memory. At every iteration step of requesting recommendations, it triggers an O(1) random index fetch across the *entire* playlist array to pick the next seed, acting as a hyper-dynamic DJ.
+- **Targeted Starts**: The `/autoplay` command now accepts an optional `query` parameter. Users can type a specific track name or artist, and the bot will perform a fuzzy-search against their local playlist. If found, it forces the Autoplay engine to bootstrap its very first set of recommendations directly from that specific track before returning to global randomness.

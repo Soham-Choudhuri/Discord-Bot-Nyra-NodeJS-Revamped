@@ -7,33 +7,39 @@ class AutoplayManager {
      * @param {string} userId
      * @param {string} mode 'dynamic' or 'static'
      * @param {string|string[]} initialVideoId
+     * @param {string} forceSeed - Explicit first seed to use
      */
-    constructor(guildId, userId, mode = 'static', initialVideoId = null) {
+    constructor(guildId, userId, mode = 'static', initialVideoId = null, forceSeed = null) {
         this.guildId = guildId;
         this.userId = userId;
-        this.mode = mode; 
-        
+        this.mode = mode;
+
         let initialSeed = initialVideoId;
         if (Array.isArray(initialVideoId) && initialVideoId.length > 0) {
-            // Pick a random track as the active seed, but seed the recent history heavily
-            initialSeed = initialVideoId[Math.floor(Math.random() * initialVideoId.length)];
+            // Pick a random track as the active seed, unless forced by query
+            initialSeed = forceSeed || initialVideoId[Math.floor(Math.random() * initialVideoId.length)];
             // Randomly select up to 3 seeds for the dynamic engine
             this.recentSeeds = [...initialVideoId].sort(() => 0.5 - Math.random()).slice(0, 3);
+            if (forceSeed && !this.recentSeeds.includes(forceSeed)) {
+                this.recentSeeds[0] = forceSeed; // Ensure the forced seed influences the start heavily
+            }
+            this.playlistSeeds = initialVideoId;
         } else {
             this.recentSeeds = initialSeed ? [initialSeed] : [];
+            this.playlistSeeds = null;
         }
-        
+
         this.seedVideoId = initialSeed;
-        
+
         // Infinite Memory (Local Session)
         this.playedIds = new Set();
         if (initialSeed) this.playedIds.add(initialSeed);
-        
+
         this.buffer = [];
         this.isFetching = false;
         this.retryCount = 0;
     }
-    
+
     /**
      * Record a track that was played into infinite memory
      * and naturally advance the seed if in dynamic mode.
@@ -49,7 +55,7 @@ class AutoplayManager {
             }
         }
     }
-    
+
     /**
      * Get the next recommended track metadata.
      * @param {object} config - Guild configuration
@@ -65,21 +71,21 @@ class AutoplayManager {
             // Low water mark: Pre-fetch asynchronously after NodeLink UDP pipeline stabilizes (3s delay)
             if (!this.isFetching) {
                 setTimeout(() => {
-                    this.fillBuffer(config, artistHistory).catch(() => {});
+                    this.fillBuffer(config, artistHistory).catch(() => { });
                 }, 3000);
             }
         }
-        
+
         return this.buffer.shift() || null;
     }
-    
+
     /**
      * Fetches recommendations and applies dynamic filtering.
      */
     async fillBuffer(config, artistHistory = []) {
         if (this.isFetching || !this.seedVideoId) return;
         this.isFetching = true;
-        
+
         try {
             // Compile the dynamic regex from config
             let regex;
@@ -90,19 +96,19 @@ class AutoplayManager {
                 regex = /\b(slowed|reverb|nightcore|remix)\b/i;
             }
 
-const normalizeString = (str) => {
-    if (!str) return '';
-    return str.toLowerCase()
-        .replace(/\s*\[.*?\]\s*/g, '')
-        .replace(/\s*\(.*?\)\s*/g, '')
-        .replace(/[^a-z0-9]/g, '');
-};
+            const normalizeString = (str) => {
+                if (!str) return '';
+                return str.toLowerCase()
+                    .replace(/\s*\[.*?\]\s*/g, '')
+                    .replace(/\s*\(.*?\)\s*/g, '')
+                    .replace(/[^a-z0-9]/g, '');
+            };
 
             // Fetch persistent user history to prevent repeating across sessions
             let persistentHistoryIds = new Set();
             let persistentHistorySignatures = new Set();
             let playlistTrackIds = new Set();
-            
+
             if (this.userId) {
                 try {
                     const rows = db.prepare('SELECT video_id, track_title, track_author FROM track_history WHERE user_id = ?').all(this.userId);
@@ -113,7 +119,7 @@ const normalizeString = (str) => {
                             persistentHistorySignatures.add(sig);
                         }
                     });
-                    
+
                     const savedRow = db.prepare('SELECT track_ids FROM user_saved_playlist WHERE user_id = ?').get(this.userId);
                     if (savedRow) {
                         const parsedIds = JSON.parse(savedRow.track_ids);
@@ -130,9 +136,9 @@ const normalizeString = (str) => {
                 // Seed Recovery Logic
                 if (this.retryCount >= 3) {
                     console.warn(`[AutoplayManager] Dead end reached for seed ${this.seedVideoId}. Attempting recovery...`);
-                    
+
                     let newSeed = null;
-                    
+
                     // Priority 1: Dynamic Recovery via User Favorites
                     try {
                         const fav = db.prepare('SELECT track_url FROM user_favorites ORDER BY RANDOM() LIMIT 1').get();
@@ -144,7 +150,7 @@ const normalizeString = (str) => {
                     } catch (err) {
                         console.error('[AutoplayManager] SQLite Recovery failed:', err.message);
                     }
-                    
+
                     // Priority 2: Fallback to Played IDs
                     if (!newSeed) {
                         const playedArray = Array.from(this.playedIds);
@@ -155,7 +161,7 @@ const normalizeString = (str) => {
                             newSeed = config.autoplay_seed;
                         }
                     }
-                    
+
                     if (newSeed) {
                         this.seedVideoId = newSeed;
                         this.retryCount = 0;
@@ -169,16 +175,21 @@ const normalizeString = (str) => {
 
                 try {
                     // Bi-directional Seed Evolution: Fetch recommendations from a cluster of recent seeds
-                    const activeSeed = (this.recentSeeds && this.recentSeeds.length > 0)
-                        ? this.recentSeeds[Math.floor(Math.random() * this.recentSeeds.length)]
-                        : this.seedVideoId;
+                    let activeSeed;
+                    if (this.playlistSeeds && this.playlistSeeds.length > 0) {
+                        activeSeed = this.playlistSeeds[Math.floor(Math.random() * this.playlistSeeds.length)];
+                    } else {
+                        activeSeed = (this.recentSeeds && this.recentSeeds.length > 0)
+                            ? this.recentSeeds[Math.floor(Math.random() * this.recentSeeds.length)]
+                            : this.seedVideoId;
+                    }
 
                     // Fetch recommendations
                     let tracks = await ytmusic.getAdvancedUpNexts(activeSeed);
-                    
+
                     // Filter with Advanced Heuristics (Tiered Fallback System)
                     let validTracks = [];
-                    
+
                     const sorter = (a, b) => {
                         if (a.videoType === 'MUSIC_VIDEO_TYPE_ATV' && b.videoType !== 'MUSIC_VIDEO_TYPE_ATV') return -1;
                         if (a.videoType !== 'MUSIC_VIDEO_TYPE_ATV' && b.videoType === 'MUSIC_VIDEO_TYPE_ATV') return 1;
@@ -188,10 +199,10 @@ const normalizeString = (str) => {
                     const isPlayedOrInHistory = (t) => {
                         if (this.playedIds.has(t.videoId) || persistentHistoryIds.has(t.videoId)) return true;
                         if (playlistTrackIds.has(t.videoId)) return true; // Negative Filtering (Discovery Mode)
-                        
+
                         const sig = `${normalizeString(t.title)}|${normalizeString(t.artists)}`;
                         if (persistentHistorySignatures.has(sig)) return true;
-                        
+
                         return false;
                     };
 
@@ -224,20 +235,20 @@ const normalizeString = (str) => {
                         }); // No need to sort ATV/OMV since this is a desperate fallback
                     }
 
-                    
+
                     if (validTracks.length === 0) {
                         this.retryCount++;
                         await new Promise(r => setTimeout(r, 1000 * Math.pow(2, this.retryCount)));
                         continue;
                     }
-                    
+
                     // Smart Shuffling: Group by artist to prevent clusters
                     const artistMap = new Map();
                     for (const t of validTracks) {
                         if (!artistMap.has(t.artists)) artistMap.set(t.artists, []);
                         artistMap.get(t.artists).push(t);
                     }
-                    
+
                     const shuffled = [];
                     while (artistMap.size > 0) {
                         for (const [artist, list] of artistMap.entries()) {
@@ -245,7 +256,7 @@ const normalizeString = (str) => {
                             if (list.length === 0) artistMap.delete(artist);
                         }
                     }
-                    
+
                     this.buffer.push(...shuffled.slice(0, 25));
                     this.retryCount = 0;
 
@@ -258,7 +269,7 @@ const normalizeString = (str) => {
                     if (global.gc) global.gc();
 
                     break;
-                } catch(e) {
+                } catch (e) {
                     console.error(`[AutoplayManager] Fetch error:`, e.message);
                     this.retryCount++;
                     await new Promise(r => setTimeout(r, 1000 * Math.pow(2, this.retryCount)));

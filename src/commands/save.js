@@ -97,6 +97,11 @@ module.exports = {
             });
             db.prepare('UPDATE user_saved_playlist SET track_ids = ? WHERE user_id = ?').run(JSON.stringify(trackObjects), userId);
 
+            // Remove the track from Playback History since it is now permanently saved
+            try {
+                db.prepare('DELETE FROM track_history WHERE user_id = ? AND video_id = ?').run(userId, videoId);
+            } catch(e) { }
+
             return interaction.editReply(`✅ Added **${currentTrack.title}** to your local saved playlist (**${row.playlist_name}**).`);
         }
     }
