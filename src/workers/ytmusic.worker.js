@@ -47,6 +47,9 @@ async function getAdvancedUpNexts(videoId, filters = {}) {
         const renderer = item.playlistPanelVideoRenderer;
         if (!renderer) return null;
         
+        const title = renderer.title?.runs?.map(r => r.text).join('') || '';
+        const artists = renderer.shortBylineText?.runs?.map(r => r.text).join('') || '';
+        
         return {
             videoId: renderer.videoId,
             title,
