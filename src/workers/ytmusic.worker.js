@@ -67,6 +67,7 @@ async function getAdvancedUpNexts(videoId, filters = {}) {
         persistentHistoryIds = [],
         persistentHistorySignatures = [],
         playlistTrackIds = [],
+        playlistSignatures = [],
         playedIds = [],
         regexBlacklist = ''
     } = filters;
@@ -76,6 +77,7 @@ async function getAdvancedUpNexts(videoId, filters = {}) {
     const persistentHistoryIdsSet = new Set(persistentHistoryIds);
     const playlistTrackIdsSet = new Set(playlistTrackIds);
     const persistentHistorySignaturesSet = new Set(persistentHistorySignatures);
+    const playlistSignaturesSet = new Set(playlistSignatures);
 
     let regex;
     try {
@@ -96,6 +98,7 @@ async function getAdvancedUpNexts(videoId, filters = {}) {
         
         const sig = `${normalizeString(t.title)}|${normalizeString(t.artists)}`;
         if (persistentHistorySignaturesSet.has(sig)) return true;
+        if (playlistSignaturesSet.has(sig)) return true;
         
         return false;
     };

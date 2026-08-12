@@ -4,6 +4,7 @@ Nodelink/node_modules/
 
 # Environment variables (Sensitive data)
 .env
+To Do Instructions.md
 
 # Database and persistent data
 # We ignore the data folder as it contains the SQLite database
@@ -17,6 +18,7 @@ NodeLink/*
 !NodeLink/start-nodelink.bat
 
 # Logs
+_logs/
 logs/
 *.log
 npm-debug.log*

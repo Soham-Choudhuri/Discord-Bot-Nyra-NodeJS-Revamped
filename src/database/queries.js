@@ -30,7 +30,7 @@ module.exports = {
     deletePlaylistMeta: db.prepare('DELETE FROM user_saved_playlist WHERE user_id = ?'),
     upsertPlaylistMeta: db.prepare('INSERT OR REPLACE INTO user_saved_playlist (user_id, playlist_id, playlist_name) VALUES (?, ?, ?)'),
     insertPlaylistTrack: db.prepare('INSERT OR IGNORE INTO playlist_tracks (user_id, video_id, title, artist) VALUES (?, ?, ?, ?)'),
-    getAllPlaylistTrackIds: db.prepare('SELECT video_id FROM playlist_tracks WHERE user_id = ?'),
+    getAllPlaylistTrackIds: db.prepare('SELECT video_id, title, artist FROM playlist_tracks WHERE user_id = ?'),
 
     // Favorites
     getFavorites: db.prepare('SELECT video_id, track_url, track_title, track_author FROM user_favorites WHERE user_id = ? ORDER BY added_at DESC'),

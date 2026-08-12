@@ -1,6 +1,15 @@
 const ytmusic = require('./ytmusic');
 const queries = require('../database/queries');
 
+// Helper to ensure signature parity with the worker thread
+function normalizeString(str) {
+    if (!str) return '';
+    return str.toLowerCase()
+        .replace(/\s*\[.*?\]\s*/g, '')
+        .replace(/\s*\(.*?\)\s*/g, '')
+        .replace(/[^a-z0-9]/g, '');
+}
+
 class AutoplayManager {
     /**
      * @param {string} guildId
@@ -85,6 +94,7 @@ class AutoplayManager {
             let persistentHistoryIds = new Set();
             let persistentHistorySignatures = new Set();
             let playlistTrackIds = new Set();
+            let playlistSignatures = new Set();
             
             if (this.userId) {
                 try {
@@ -97,7 +107,12 @@ class AutoplayManager {
 
                     // 2. Check their explicitly saved playlists
                     const savedRows = queries.getAllPlaylistTrackIds.all(this.userId);
-                    savedRows.forEach(r => playlistTrackIds.add(r.video_id));
+                    savedRows.forEach(r => {
+                        if (r.video_id) playlistTrackIds.add(r.video_id);
+                        if (r.title && r.artist) {
+                            playlistSignatures.add(`${normalizeString(r.title)}|${normalizeString(r.artist)}`);
+                        }
+                    });
                 } catch (e) {
                     console.error('[AutoplayManager] Error fetching persistent data:', e.message);
                 }
@@ -158,6 +173,7 @@ class AutoplayManager {
                         persistentHistoryIds: Array.from(persistentHistoryIds),
                         persistentHistorySignatures: Array.from(persistentHistorySignatures),
                         playlistTrackIds: Array.from(playlistTrackIds),
+                        playlistSignatures: Array.from(playlistSignatures),
                         playedIds: Array.from(this.playedIds),
                         regexBlacklist: config.regex_blacklist
                     };
