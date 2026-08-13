@@ -2,7 +2,7 @@
 
 Nyra Brooks is a personalized Discord music bot built with JavaScript, focused on high performance and user experience. She utilizes a custom NodeLink integration for low-latency audio playback and a sophisticated Just-In-Time (JIT) algorithm to deliver personalized music recommendations.
 
-To view the detailed history of updates and architectural changes, see in [Changelog](docs/Changelog.md).
+To view the detailed history of updates and architectural changes, see in [Changelog](docs/Changelog_Revamped.md).
 
 ## Feature Highlights
 - **High-Performance Audio Engine**: Powered by NodeLink and Moonlink.js for stutter-free, zero-GC-pause audio streaming.
