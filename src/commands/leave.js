@@ -40,16 +40,16 @@ module.exports = {
         }
 
         // Delete NP Message
-        const config = configManager.get(interaction.guildId);
-        if (config.np_message_id) {
-            const channelId = player ? (player.textChannelId || player.voiceChannelId) : null;
-            const textChannel = channelId ? client.channels.cache.get(channelId) : null;
+        const npMessageId = player ? player.get('np_message_id') : null;
+        if (npMessageId) {
+            const channelId = player.textChannelId || player.voiceChannelId;
+            const textChannel = client.channels.cache.get(channelId);
             if (textChannel) {
-                textChannel.messages.fetch(config.np_message_id).then(msg => {
+                textChannel.messages.fetch(npMessageId).then(msg => {
                     if (msg && msg.deletable) msg.delete();
                 }).catch(() => {});
             }
-            configManager.set(interaction.guildId, 'np_message_id', null);
+            player.set('np_message_id', null);
         }
 
         await interaction.editReply({ content: '👋 Stopped playback and disconnected from the voice channel.' });

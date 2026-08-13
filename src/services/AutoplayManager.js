@@ -1,14 +1,7 @@
 const ytmusic = require('./ytmusic');
 const queries = require('../database/queries');
 
-// Helper to ensure signature parity with the worker thread
-function normalizeString(str) {
-    if (!str) return '';
-    return str.toLowerCase()
-        .replace(/\s*\[.*?\]\s*/g, '')
-        .replace(/\s*\(.*?\)\s*/g, '')
-        .replace(/[^a-z0-9]/g, '');
-}
+// Removed normalizeString from P-Core to prevent Regex execution on active streams
 
 class AutoplayManager {
     /**
@@ -39,7 +32,7 @@ class AutoplayManager {
         if (initialSeed) this.playedIds.add(initialSeed);
         
         this.buffer = [];
-        this.isFetching = false;
+        this.fetchPromise = null;
         this.retryCount = 0;
     }
     
@@ -72,7 +65,7 @@ class AutoplayManager {
             await this.fillBuffer(config, artistHistory);
         } else if (this.buffer.length <= 1) {
             // Low water mark: Pre-fetch asynchronously after NodeLink UDP pipeline stabilizes (3s delay)
-            if (!this.isFetching) {
+            if (!this.fetchPromise) {
                 setTimeout(() => {
                     this.fillBuffer(config, artistHistory).catch(() => {});
                 }, 3000);
@@ -86,15 +79,21 @@ class AutoplayManager {
      * Fetches recommendations and applies dynamic filtering.
      */
     async fillBuffer(config, artistHistory = []) {
-        if (this.isFetching || !this.seedVideoId) return;
-        this.isFetching = true;
+        if (!this.seedVideoId) return;
+
+        // Gracefully wait if a background fetch is already active
+        if (this.fetchPromise) {
+            await this.fetchPromise;
+            return;
+        }
         
-        try {
-            // Fetch persistent user history to prevent repeating across sessions
-            let persistentHistoryIds = new Set();
-            let persistentHistorySignatures = new Set();
-            let playlistTrackIds = new Set();
-            let playlistSignatures = new Set();
+        this.fetchPromise = (async () => {
+            try {
+                // Fetch persistent user history to prevent repeating across sessions
+                let persistentHistoryIds = new Set();
+                let persistentHistorySignatures = new Set();
+                let playlistTrackIds = new Set();
+                let playlistSignatures = []; // Raw objects passed directly to E-Core
             
             if (this.userId) {
                 try {
@@ -105,14 +104,15 @@ class AutoplayManager {
                         if (r.track_signature) persistentHistorySignatures.add(r.track_signature);
                     });
 
-                    // 2. Check their explicitly saved playlists
-                    const savedRows = queries.getAllPlaylistTrackIds.all(this.userId);
-                    savedRows.forEach(r => {
-                        if (r.video_id) playlistTrackIds.add(r.video_id);
-                        if (r.title && r.artist) {
-                            playlistSignatures.add(`${normalizeString(r.title)}|${normalizeString(r.artist)}`);
-                        }
-                    });
+                        // 2. Check their explicitly saved playlists
+                        const savedRows = queries.getAllPlaylistTrackIds.all(this.userId);
+                        savedRows.forEach(r => {
+                            if (r.video_id) playlistTrackIds.add(r.video_id);
+                            if (r.title && r.artist) {
+                                // Defer heavy Regex normalization to the background E-Core
+                                playlistSignatures.push({ title: r.title, artist: r.artist });
+                            }
+                        });
                 } catch (e) {
                     console.error('[AutoplayManager] Error fetching persistent data:', e.message);
                 }
@@ -173,7 +173,7 @@ class AutoplayManager {
                         persistentHistoryIds: Array.from(persistentHistoryIds),
                         persistentHistorySignatures: Array.from(persistentHistorySignatures),
                         playlistTrackIds: Array.from(playlistTrackIds),
-                        playlistSignatures: Array.from(playlistSignatures),
+                        playlistSignatures: playlistSignatures, // Arrays of objects
                         playedIds: Array.from(this.playedIds),
                         regexBlacklist: config.regex_blacklist
                     };
@@ -194,7 +194,7 @@ class AutoplayManager {
                     validTracks = null;
 
                     // Execute immediate manual memory sweep if exposed
-                    if (global.gc) global.gc();
+                    // GC removed to prevent stuttering active streams on the P-Core
 
                     break;
                 } catch(e) {
@@ -203,8 +203,12 @@ class AutoplayManager {
                     await new Promise(r => setTimeout(r, 1000 * Math.pow(2, this.retryCount)));
                 }
             }
+        })(); // Self-invoking async function to trap the Promise
+
+        try {
+            await this.fetchPromise;
         } finally {
-            this.isFetching = false;
+            this.fetchPromise = null;
         }
     }
 }

@@ -124,13 +124,5 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // ─── Automated Memory Management ──────────────────────────────────
-// Background Sweep: Check memory every 10 minutes and aggressively GC if over 50MB
-setInterval(() => {
-    const memUsage = process.memoryUsage().heapUsed / 1024 / 1024;
-    if (memUsage > 50 && global.gc) {
-        console.log(`\n🧹 [GC] Heap at ${memUsage.toFixed(2)} MB. Forcing background memory sweep...`);
-        global.gc();
-        const newMem = process.memoryUsage().heapUsed / 1024 / 1024;
-        console.log(`🧹 [GC] Sweep complete. Heap reduced to ${newMem.toFixed(2)} MB.\n`);
-    }
-}, 10 * 60 * 1000).unref(); // unref so it doesn't block graceful shutdown
+// Background Sweep has been moved to execute exclusively between tracks (trackEnd)
+// to completely eliminate Stop-The-World stutters during active playback!

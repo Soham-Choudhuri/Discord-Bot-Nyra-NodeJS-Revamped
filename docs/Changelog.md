@@ -1,4 +1,4 @@
-# Changelog for Nyra Brooks
+# Discord Music Bot (Nyra Brooks) 
 
 ## Update 1: The Configuration Update
 

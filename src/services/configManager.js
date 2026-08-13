@@ -6,7 +6,6 @@ const KEY_TO_QUERY_MAP = {
     'autoplay_seed': 'updateAutoplaySeed',
     'delete_timer': 'updateDeleteTimer',
     'cmd_channel': 'updateCmdChannel',
-    'np_message_id': 'updateNpMessageId',
     'artist_memory': 'updateArtistMemory',
     'regex_blacklist': 'updateRegexBlacklist'
 };

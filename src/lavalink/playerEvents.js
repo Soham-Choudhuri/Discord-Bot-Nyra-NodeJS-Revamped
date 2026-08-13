@@ -36,6 +36,41 @@ function formatDuration(ms) {
 }
 
 /**
+ * Aggressive state wipe. Used when fetching errors occur on an empty queue.
+ */
+async function resetToDefaultState(player, client, reason) {
+    const autoplayManager = player.get('autoplayManager');
+    if (autoplayManager) autoplayManager.playedIds.clear();
+    
+    player.queue.clear();
+    player.set('autoplay', false);
+    player.set('autoplayManager', null);
+    player.set('favoritesQueue', null);
+    player.set('artistHistory', []);
+    player.set('circuit_breaker', 0);
+    player.set('stuck_count', 0);
+    player.set('stalled_ticks', 0);
+    
+    if (player.setLoop) {
+        player.setLoop(0); // 0 or 'none' depending on lib
+    } else {
+        player.loop = 0;
+    }
+
+    try {
+        await player.stop();
+    } catch (e) {}
+
+    if (reason) {
+        const channelId = player.textChannelId || player.voiceChannelId;
+        const textChannel = client.channels.cache.get(channelId);
+        if (textChannel) {
+            textChannel.send(reason).catch(()=>{});
+        }
+    }
+}
+
+/**
  * Shared circuit breaker logic for track errors and stuck tracks.
  * @returns {boolean} True if tripped, False if safe.
  */
@@ -51,13 +86,7 @@ async function checkCircuitBreaker(player, client) {
 
     if (breakerCount >= 3) {
         console.error(`🔴 Circuit Breaker tripped in guild ${player.guildId}! Too many rapid errors.`);
-        const channelId = player.textChannelId || player.voiceChannelId;
-        const textChannel = client.channels.cache.get(channelId);
-        if (textChannel) {
-            textChannel.send(`🔴 NodeLink is experiencing severe errors. Playback paused to prevent spam.`).catch(() => {});
-        }
-        await player.stopPlaying();
-        player.set('circuit_breaker', 0);
+        await resetToDefaultState(player, client, `🔴 **NodeLink Circuit Breaker Tripped!** Encountered massive error spam. The session has been forcefully reset to its idle state to protect the engine.`);
         return true;
     }
     return false;
@@ -141,16 +170,17 @@ function registerPlayerEvents(client) {
             client.user.setActivity(`${track.author} - ${track.title}`, { type: ActivityType.Listening });
 
             // --- Persistent Message Logic (Delete & Resend) ---
-            if (config.np_message_id) {
+            const npMessageId = player.get('np_message_id');
+            if (npMessageId) {
                 try {
-                    const oldMsg = await textChannel.messages.fetch(config.np_message_id);
+                    const oldMsg = await textChannel.messages.fetch(npMessageId);
                     if (oldMsg && oldMsg.deletable) await oldMsg.delete();
                 } catch (e) { }
             }
 
             try {
                 const newMsg = await textChannel.send(response);
-                configManager.set(guildId, 'np_message_id', newMsg.id);
+                player.set('np_message_id', newMsg.id);
 
                 // Removed Compact Mode Reaction Trigger
             } catch (error) {
@@ -195,6 +225,11 @@ function registerPlayerEvents(client) {
         } catch (error) {
             console.error(`❌ Track History Insert Error:`, error.message);
         }
+
+        // --- Strategic Garbage Collection ---
+        // Run the Stop-The-World sweep exclusively in the 50ms gap between songs
+        // to keep RAM low without stuttering the active UDP pipeline!
+        if (global.gc) global.gc();
     });
 
     // ─── Queue End Event (The Autoplay & JIT Engine) ─────────────────
@@ -248,7 +283,7 @@ function registerPlayerEvents(client) {
                 }
             } catch (error) {
                 console.error(`❌ JIT Favorites error for guild ${guildId}:`, error.message);
-                client.moonlink.emit("queueEnd", player);
+                await resetToDefaultState(player, client, `⚠️ **JIT Fetch Error**: Failed to load the next favorite track. The session has been aggressively reset.`);
                 return;
             }
         }
@@ -336,31 +371,26 @@ function registerPlayerEvents(client) {
             }
 
             if (consecutiveFails >= maxFails) {
-                const textChannel = client.channels.cache.get(player.textChannelId || player.voiceChannelId);
-                if (textChannel) {
-                    textChannel.send('⚠️ Autoplay failed to load tracks repeatedly. Stopping session.').catch(()=>{});
-                }
+                await resetToDefaultState(player, client, `⚠️ **Autoplay Network Failure**: YouTube rate-limits repeatedly blocked track resolution. The session has been aggressively reset to protect the engine.`);
             }
         }
 
-        // 3. --- Session End Logic (Runs if no favorites, no Autoplay, or if they fail) ---
-        const config = configManager.get(guildId);
-        if (config.np_message_id) {
+        // 3. --- Session End Logic ---
+        const npMessageId = player.get('np_message_id');
+        if (npMessageId) {
             try {
                 const channelId = player.textChannelId || player.voiceChannelId;
                 const textChannel = client.channels.cache.get(channelId);
                 if (textChannel) {
-                    const msg = await textChannel.messages.fetch(config.np_message_id);
-                    if (msg && msg.deletable) {
-                        await msg.delete();
-                    }
+                    const msg = await textChannel.messages.fetch(npMessageId);
+                    if (msg && msg.deletable) msg.delete();
                     await textChannel.send({
                         content: '🏁 **Queue finished!** I\'m still in the voice channel.',
                         embeds: []
                     });
                 }
             } catch (e) { }
-            configManager.set(guildId, 'np_message_id', null);
+            player.set('np_message_id', null);
         }
 
         // Clear Activity Status
@@ -393,10 +423,8 @@ function registerPlayerEvents(client) {
         // If a track fails, don't just sit there—skip it!
         if (player.queue.size > 0) {
             await player.skip();
-        } else if (player.get('autoplay')) {
-            client.moonlink.emit("queueEnd", player);
         } else {
-            await player.stop();
+            await resetToDefaultState(player, client, `⚠️ **Fatal Playback Error**: NodeLink failed to stream **${track.title}**. Since the queue is empty, the session has been aggressively reset.`);
         }
     });
 
@@ -428,10 +456,8 @@ function registerPlayerEvents(client) {
 
             if (player.queue.size > 0) {
                 await player.skip();
-            } else if (player.get('autoplay')) {
-                client.moonlink.emit("queueEnd", player);
             } else {
-                await player.stop();
+                await resetToDefaultState(player, client, `⚠️ **Track Stuck**: NodeLink could not play **${track.title}**. Since the queue is empty, the session has been aggressively reset.`);
             }
         }
     });
@@ -455,21 +481,16 @@ function registerPlayerEvents(client) {
                 // Wait for ~7 seconds of stalled ticks before forcing recovery
                 if (stalledTicks >= 7) {
                     player.set('stalled_ticks', 0);
-                    client.moonlink.emit("queueEnd", player);
-                    return;
-                    
-                    const channelId = player.textChannelId || player.voiceChannelId;
-                    const textChannel = client.channels.cache.get(channelId);
-                    if (textChannel) {
-                        textChannel.send(`⚠️ Audio stream stalled. Bypassing engine loop and skipping track to force recovery...`).catch(()=>{});
-                    }
                     
                     if (player.queue.size > 0) {
+                        const channelId = player.textChannelId || player.voiceChannelId;
+                        const textChannel = client.channels.cache.get(channelId);
+                        if (textChannel) {
+                            textChannel.send(`⚠️ Audio stream stalled. Bypassing engine loop and skipping track to force recovery...`).catch(()=>{});
+                        }
                         await player.skip();
-                    } else if (player.get('autoplay')) {
-                        client.moonlink.emit("queueEnd", player);
                     } else {
-                        await player.stop();
+                        await resetToDefaultState(player, client, `⚠️ **Audio Stream Stalled**: The UDP pipeline failed beyond recovery. Since the queue is empty, the session has been aggressively reset.`);
                     }
                 }
             } else {

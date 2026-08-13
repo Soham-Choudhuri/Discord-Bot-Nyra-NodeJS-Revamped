@@ -40,3 +40,4 @@ Desktop.ini
 *.swo
 *.sublime-project
 *.sublime-workspace
+.agents

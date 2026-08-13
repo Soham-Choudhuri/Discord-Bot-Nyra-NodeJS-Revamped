@@ -25,16 +25,16 @@ module.exports = {
         player.set('favoritesQueue', null);
 
         // Delete NP Message
-        const config = configManager.get(interaction.guildId);
-        if (config.np_message_id) {
+        const npMessageId = player.get('np_message_id');
+        if (npMessageId) {
             const channelId = player.textChannelId || player.voiceChannelId;
             const textChannel = client.channels.cache.get(channelId);
             if (textChannel) {
-                textChannel.messages.fetch(config.np_message_id).then(msg => {
+                textChannel.messages.fetch(npMessageId).then(msg => {
                     if (msg && msg.deletable) msg.delete();
                 }).catch(() => {});
             }
-            configManager.set(interaction.guildId, 'np_message_id', null);
+            player.set('np_message_id', null);
         }
 
         await interaction.editReply({ content: '⏳ **Lazy Stop**: Current song will finish, then playback will stop and queue will be cleared.' });

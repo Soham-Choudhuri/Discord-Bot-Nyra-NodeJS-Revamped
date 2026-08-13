@@ -11,7 +11,6 @@ module.exports = {
     updateAutoplaySeed: db.prepare('UPDATE settings SET autoplay_seed = ? WHERE guild_id = ?'),
     updateDeleteTimer: db.prepare('UPDATE settings SET delete_timer = ? WHERE guild_id = ?'),
     updateCmdChannel: db.prepare('UPDATE settings SET cmd_channel = ? WHERE guild_id = ?'),
-    updateNpMessageId: db.prepare('UPDATE settings SET np_message_id = ? WHERE guild_id = ?'),
     updateArtistMemory: db.prepare('UPDATE settings SET artist_memory = ? WHERE guild_id = ?'),
     updateRegexBlacklist: db.prepare('UPDATE settings SET regex_blacklist = ? WHERE guild_id = ?'),
 

@@ -23,21 +23,37 @@ async function initialize() {
 
 async function search(query) {
     if (!initialized) await initialize();
-    return ytmusic.searchSongs(query);
+    try {
+        return await ytmusic.searchSongs(query);
+    } catch (error) {
+        console.error(`[Worker] Search network error:`, error.message);
+        return [];
+    }
 }
 
 async function getUpNexts(videoId) {
     if (!initialized) await initialize();
-    return ytmusic.getUpNexts(videoId);
+    try {
+        return await ytmusic.getUpNexts(videoId);
+    } catch (error) {
+        console.error(`[Worker] UpNext network error:`, error.message);
+        return [];
+    }
 }
 
 async function getAdvancedUpNexts(videoId, filters = {}) {
     if (!initialized) await initialize();
-    const res = await ytmusic.constructRequest('next', {
-        videoId,
-        playlistId: `RDAMVM${videoId}`,
-        isAudioOnly: true
-    });
+    let res;
+    try {
+        res = await ytmusic.constructRequest('next', {
+            videoId,
+            playlistId: `RDAMVM${videoId}`,
+            isAudioOnly: true
+        });
+    } catch (error) {
+        console.error(`[Worker] AdvancedUpNext network error:`, error.message);
+        return [];
+    }
     
     const tabs = res?.contents?.singleColumnMusicWatchNextResultsRenderer?.tabbedRenderer?.watchNextTabbedResultsRenderer?.tabs[0]?.tabRenderer?.content?.musicQueueRenderer?.content?.playlistPanelRenderer?.contents;
     
@@ -77,7 +93,16 @@ async function getAdvancedUpNexts(videoId, filters = {}) {
     const persistentHistoryIdsSet = new Set(persistentHistoryIds);
     const playlistTrackIdsSet = new Set(playlistTrackIds);
     const persistentHistorySignaturesSet = new Set(persistentHistorySignatures);
-    const playlistSignaturesSet = new Set(playlistSignatures);
+    
+    // Normalize raw playlist objects natively on the E-Core worker
+    const playlistSignaturesSet = new Set();
+    if (playlistSignatures && playlistSignatures.length > 0) {
+        for (const sig of playlistSignatures) {
+            if (sig.title && sig.artist) {
+                playlistSignaturesSet.add(`${normalizeString(sig.title)}|${normalizeString(sig.artist)}`);
+            }
+        }
+    }
 
     let regex;
     try {

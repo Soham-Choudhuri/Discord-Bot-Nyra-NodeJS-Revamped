@@ -75,7 +75,7 @@ const path = require('path');
 const pool = new Piscina({
     filename: path.resolve(__dirname, '../workers/ytmusic.worker.js'),
     minThreads: 1, // Keep at least one warm
-    maxThreads: 4  // Limit to 4 to protect P-Cores
+    maxThreads: 1  // Limit to 1 to physically prevent P-Core CPU starvation on i3 hardware
 });
 
 /**

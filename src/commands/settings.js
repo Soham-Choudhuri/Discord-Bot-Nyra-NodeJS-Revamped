@@ -4,10 +4,20 @@ const configManager = require('../services/configManager');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('settings')
-        .setDescription('Manage Nyra configuration for this server')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+        .setDescription('Manage Nyra configuration for this server'),
 
     async execute(interaction, client) {
+        const isOwner = interaction.user.id === interaction.guild.ownerId;
+        const hasPerms = interaction.member.permissions.has(PermissionFlagsBits.ManageGuild);
+        const isWhitelisted = process.env.WHITELISTED_USERS?.split(',').includes(interaction.user.id);
+
+        if (!isOwner && !hasPerms && !isWhitelisted) {
+            return interaction.reply({
+                content: '❌ You do not have permission to manage bot settings.',
+                flags: [MessageFlags.Ephemeral]
+            });
+        }
+
         const guildId = interaction.guildId;
         const config = configManager.get(guildId);
 

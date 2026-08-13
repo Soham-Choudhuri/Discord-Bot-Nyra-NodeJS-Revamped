@@ -12,7 +12,8 @@ module.exports = {
         // ─── Command Channel Restriction ────────────────────────────
         if (interaction.isChatInputCommand()) {
             const isOwner = interaction.user.id === interaction.guild.ownerId;
-            if (config.cmd_channel && interaction.channelId !== config.cmd_channel && !isOwner) {
+            const isWhitelisted = process.env.WHITELISTED_USERS?.split(',').includes(interaction.user.id);
+            if (config.cmd_channel && interaction.channelId !== config.cmd_channel && !isOwner && !isWhitelisted) {
                 return interaction.reply({
                     content: `❌ Commands are restricted to <#${config.cmd_channel}>.`,
                     flags: [MessageFlags.Ephemeral]
