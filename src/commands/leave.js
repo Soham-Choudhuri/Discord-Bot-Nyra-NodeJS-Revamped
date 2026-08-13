@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const configManager = require('../services/configManager');
 const { getVoiceConnection } = require('@discordjs/voice');
-const configManager = require('../services/configManager');
 
 module.exports = {
     data: new SlashCommandBuilder()

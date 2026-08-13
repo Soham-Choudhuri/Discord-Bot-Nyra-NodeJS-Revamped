@@ -203,6 +203,9 @@ class AutoplayManager {
                     await new Promise(r => setTimeout(r, 1000 * Math.pow(2, this.retryCount)));
                 }
             }
+        } catch (globalErr) {
+            console.error('[AutoplayManager] Fatal error in fetchPromise:', globalErr);
+        }
         })(); // Self-invoking async function to trap the Promise
 
         try {
