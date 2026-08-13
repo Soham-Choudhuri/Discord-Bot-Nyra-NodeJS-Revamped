@@ -17,7 +17,10 @@ module.exports = {
                 )
         ),
     async execute(interaction, client) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+
+        await interaction.deferReply({ flags: replyFlags });
         
         let player = client.moonlink.players.get(interaction.guildId);
         let startingFromEmpty = false;
@@ -27,12 +30,12 @@ module.exports = {
         if (!player || (!player.playing && player.queue.size === 0)) {
             const row = queries.getSavedPlaylist.get(userId);
             if (!row) {
-                return interaction.editReply('❌ Nothing is currently playing. Start a track first with `/stream` or `/save` a playlist to use Discovery Mode.');
+                return interaction.editReply({ content: '❌ Nothing is currently playing. Start a track first with `/stream` or `/save` a playlist to use Discovery Mode.', flags: replyFlags });
             }
 
             const voiceChannel = interaction.member?.voice?.channel;
             if (!voiceChannel) {
-                return interaction.editReply('❌ You must be in a voice channel to start an Autoplay session from your saved playlist.');
+                return interaction.editReply({ content: '❌ You must be in a voice channel to start an Autoplay session from your saved playlist.', flags: replyFlags });
             }
 
             if (!player) {

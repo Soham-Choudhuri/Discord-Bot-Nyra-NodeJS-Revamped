@@ -29,7 +29,10 @@ module.exports = {
         ),
 
     async execute(interaction, client) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+
+        await interaction.deferReply({ flags: replyFlags });
         
         const userId = interaction.user.id;
         const subcommand = interaction.options.getSubcommand();

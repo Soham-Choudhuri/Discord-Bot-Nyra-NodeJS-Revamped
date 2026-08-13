@@ -13,6 +13,8 @@ module.exports = {
     updateCmdChannel: db.prepare('UPDATE settings SET cmd_channel = ? WHERE guild_id = ?'),
     updateArtistMemory: db.prepare('UPDATE settings SET artist_memory = ? WHERE guild_id = ?'),
     updateRegexBlacklist: db.prepare('UPDATE settings SET regex_blacklist = ? WHERE guild_id = ?'),
+    updateReplyMode: db.prepare('UPDATE settings SET reply_mode = ? WHERE guild_id = ?'),
+    updateWhitelistRole: db.prepare('UPDATE settings SET whitelist_role = ? WHERE guild_id = ?'),
 
     // User Preferences & History
     getUserPref: db.prepare('SELECT is_tracking_enabled FROM user_preferences WHERE user_id = ?'),

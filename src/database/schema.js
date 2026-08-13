@@ -33,7 +33,9 @@ function initSchema() {
             cmd_channel TEXT DEFAULT NULL,
             np_message_id TEXT DEFAULT NULL,
             artist_memory INTEGER DEFAULT 5,
-            regex_blacklist TEXT DEFAULT '\\b(slowed|reverb|nightcore|sped\\s*up|chipmunk|mashup|tiktok|remix|8d|bass\\s*boosted|acoustic|demo|instrumental|karaoke|cover|live)\\b'
+            regex_blacklist TEXT DEFAULT '\\b(slowed|reverb|nightcore|sped\\s*up|chipmunk|mashup|tiktok|remix|8d|bass\\s*boosted|acoustic|demo|instrumental|karaoke|cover|live)\\b',
+            reply_mode INTEGER DEFAULT 0,
+            whitelist_role TEXT DEFAULT NULL
         )
     `).run();
 
@@ -117,6 +119,12 @@ function initSchema() {
     }
     if (!settingsColumnNames.includes('regex_blacklist')) {
         db.prepare('ALTER TABLE settings ADD COLUMN regex_blacklist TEXT DEFAULT \'\\b(slowed|reverb|nightcore|sped\\s*up|chipmunk|mashup|tiktok|remix|8d|bass\\s*boosted|acoustic|demo|instrumental|karaoke|cover|live)\\b\'').run();
+    }
+    if (!settingsColumnNames.includes('reply_mode')) {
+        db.prepare('ALTER TABLE settings ADD COLUMN reply_mode INTEGER DEFAULT 0').run();
+    }
+    if (!settingsColumnNames.includes('whitelist_role')) {
+        db.prepare('ALTER TABLE settings ADD COLUMN whitelist_role TEXT DEFAULT NULL').run();
     }
 
     // --- Safe Migration for user_favorites ---

@@ -1,4 +1,4 @@
-const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
+const { Events, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags, RoleSelectMenuBuilder } = require('discord.js');
 const configManager = require('../services/configManager');
 const queries = require('../database/queries');
 
@@ -12,7 +12,7 @@ module.exports = {
         // ─── Command Channel Restriction ────────────────────────────
         if (interaction.isChatInputCommand()) {
             const isOwner = interaction.user.id === interaction.guild.ownerId;
-            const isWhitelisted = process.env.WHITELISTED_USERS?.split(',').includes(interaction.user.id);
+            const isWhitelisted = config.whitelist_role && interaction.member.roles.cache.has(config.whitelist_role);
             if (config.cmd_channel && interaction.channelId !== config.cmd_channel && !isOwner && !isWhitelisted) {
                 return interaction.reply({
                     content: `❌ Commands are restricted to <#${config.cmd_channel}>.`,
@@ -113,18 +113,33 @@ module.exports = {
             if (interaction.customId === 'settings_menu') {
                 const setting = interaction.values[0];
 
-                // Direct Toggle for Verbose Mode
-                if (setting === 'verbose_mode') {
-                    const newValue = config.verbose_mode === 1 ? 0 : 1;
-                    configManager.set(guildId, 'verbose_mode', newValue);
+                // Direct Toggle for Verbose Mode or Reply Mode
+                if (setting === 'verbose_mode' || setting === 'reply_mode') {
+                    const newValue = config[setting] === 1 ? 0 : 1;
+                    configManager.set(guildId, setting, newValue);
                     
                     // Refresh the settings dashboard
                     const settingsCommand = client.commands.get('settings');
                     try {
                         return await settingsCommand.execute(interaction, client);
                     } catch (error) {
-                        console.error('Failed to refresh verbose_mode settings:', error);
+                        console.error(`Failed to refresh ${setting} settings:`, error);
                     }
+                }
+
+                // Native Discord Component for Role Selection
+                if (setting === 'whitelist_role') {
+                    const roleSelect = new RoleSelectMenuBuilder()
+                        .setCustomId('set_whitelist_role')
+                        .setPlaceholder('Select the Whitelist Role (DJ Role)...');
+                        
+                    const row = new ActionRowBuilder().addComponents(roleSelect);
+                    
+                    return await interaction.reply({
+                        content: 'Please select a role below to grant them override access:',
+                        components: [row],
+                        flags: [MessageFlags.Ephemeral]
+                    });
                 }
 
                 // Modals for other settings
@@ -154,6 +169,20 @@ module.exports = {
                 const row = new ActionRowBuilder().addComponents(input);
                 modal.addComponents(row);
                 await interaction.showModal(modal);
+            }
+            return;
+        }
+
+        // ─── Role Select Menus ───────────────────────
+        if (interaction.isRoleSelectMenu()) {
+            if (interaction.customId === 'set_whitelist_role') {
+                const selectedRoleId = interaction.values[0];
+                configManager.set(guildId, 'whitelist_role', selectedRoleId);
+                
+                await interaction.update({
+                    content: `✅ Whitelist role has been updated! Anyone with <@&${selectedRoleId}> can now bypass restrictions. Run \`/settings\` again to see the updated dashboard.`,
+                    components: []
+                });
             }
             return;
         }

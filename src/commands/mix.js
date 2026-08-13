@@ -18,6 +18,7 @@ module.exports = {
     async execute(interaction, client) {
         const member = interaction.member;
         const voiceChannel = member?.voice?.channel;
+        const config = configManager.get(interaction.guildId);
 
         if (!voiceChannel) {
             return interaction.reply({
@@ -26,7 +27,17 @@ module.exports = {
             });
         }
 
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        const player = client.moonlink.players.get(interaction.guildId);
+        if (player && player.queue.size >= config.max_queue_size) {
+            return interaction.reply({
+                content: `❌ The queue has reached the maximum size of **${config.max_queue_size}** tracks.`,
+                flags: replyFlags,
+            });
+        }
+
+        await interaction.deferReply({ flags: replyFlags });
 
         const query = interaction.options.getString('query');
 
@@ -105,7 +116,6 @@ module.exports = {
             await interaction.editReply({ content: `⏳ Generating YouTube Music Mix for **${seedTrack.title}**...` });
 
             // 2. Add the seed track to queue and play
-            const config = configManager.get(interaction.guildId);
             if (player.queue.size >= config.max_queue_size) {
                  return interaction.editReply({ content: `❌ The queue is full! Maximum allowed songs: **${config.max_queue_size}**` });
             }

@@ -7,19 +7,19 @@ module.exports = {
         .setDescription('Manage Nyra configuration for this server'),
 
     async execute(interaction, client) {
+        const guildId = interaction.guildId;
+        const config = configManager.get(guildId);
+
         const isOwner = interaction.user.id === interaction.guild.ownerId;
         const hasPerms = interaction.member.permissions.has(PermissionFlagsBits.ManageGuild);
-        const isWhitelisted = process.env.WHITELISTED_USERS?.split(',').includes(interaction.user.id);
+        const isWhitelisted = config.whitelist_role && interaction.member.roles.cache.has(config.whitelist_role);
 
         if (!isOwner && !hasPerms && !isWhitelisted) {
             return interaction.reply({
                 content: '❌ You do not have permission to manage bot settings.',
-                flags: [MessageFlags.Ephemeral]
+                flags: config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral]
             });
         }
-
-        const guildId = interaction.guildId;
-        const config = configManager.get(guildId);
 
         const embed = new EmbedBuilder()
             .setColor(0x7C3AED)
@@ -33,6 +33,8 @@ module.exports = {
                 { name: '🔒 Command Channel', value: config.cmd_channel ? `<#${config.cmd_channel}>` : '`No Restriction`', inline: true },
                 { name: '🧠 Artist Memory', value: `\`${config.artist_memory}\` unique artists`, inline: true },
                 { name: '🚫 Regex Blacklist', value: `\`${config.regex_blacklist.length > 50 ? config.regex_blacklist.substring(0, 47) + '...' : config.regex_blacklist}\``, inline: true },
+                { name: '💬 Reply Mode', value: config.reply_mode === 1 ? '`Global` (Public)' : '`Ephemeral` (Private)', inline: true },
+                { name: '🛡️ Whitelist Role', value: config.whitelist_role ? `<@&${config.whitelist_role}>` : '`None`', inline: true }
             )
             .setTimestamp();
 
@@ -83,6 +85,18 @@ module.exports = {
                             description: 'Set a custom permanent seed for the autoplay algorithm.',
                             value: 'autoplay_seed',
                             emoji: '♾️'
+                        },
+                        {
+                            label: 'Reply Mode',
+                            description: 'Toggle if bot replies are visible to everyone.',
+                            value: 'reply_mode',
+                            emoji: '💬'
+                        },
+                        {
+                            label: 'Whitelist Role',
+                            description: 'Set a role to bypass command and dashboard restrictions.',
+                            value: 'whitelist_role',
+                            emoji: '🛡️'
                         }
                     ]),
             );
@@ -90,7 +104,7 @@ module.exports = {
         const response = {
             embeds: [embed],
             components: [row],
-            flags: [MessageFlags.Ephemeral]
+            flags: config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral]
         };
 
         if (interaction.isMessageComponent() && !interaction.replied && !interaction.deferred) {

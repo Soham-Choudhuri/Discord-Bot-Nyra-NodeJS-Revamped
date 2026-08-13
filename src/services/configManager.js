@@ -7,7 +7,9 @@ const KEY_TO_QUERY_MAP = {
     'delete_timer': 'updateDeleteTimer',
     'cmd_channel': 'updateCmdChannel',
     'artist_memory': 'updateArtistMemory',
-    'regex_blacklist': 'updateRegexBlacklist'
+    'regex_blacklist': 'updateRegexBlacklist',
+    'reply_mode': 'updateReplyMode',
+    'whitelist_role': 'updateWhitelistRole'
 };
 
 class ConfigManager {

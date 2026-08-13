@@ -1,5 +1,6 @@
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const queries = require('../database/queries');
+const configManager = require('../services/configManager');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -25,8 +26,10 @@ module.exports = {
         const subcommand = interaction.options.getSubcommand();
         const userId = interaction.user.id;
 
-        // Force ephemeral to respect privacy
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+
+        await interaction.deferReply({ flags: replyFlags });
 
         if (subcommand === 'toggle') {
             // Get current preference

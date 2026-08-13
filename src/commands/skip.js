@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const configManager = require('../services/configManager');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -6,14 +7,15 @@ module.exports = {
         .setDescription('Skip the currently playing track'),
 
     async execute(interaction, client) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        await interaction.deferReply({ flags: replyFlags });
 
         const player = client.moonlink.players.get(interaction.guildId);
 
         if (!player || !player.playing) {
-            return interaction.editReply({
-                content: '❌ Nothing is currently playing.'
-            });
+            return interaction.editReply({ content: '❌ Nothing is currently playing.', flags: replyFlags });
         }
 
         const skippedTitle = player.current?.title || 'Unknown';

@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const configManager = require('../services/configManager');
 
 // Helper function to convert milliseconds to a clean HH:MM:SS format
 function formatDuration(ms) {
@@ -18,26 +19,27 @@ module.exports = {
 
     async execute(interaction, client) {
         const player = client.moonlink.players.get(interaction.guildId);
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
 
-        // 1. Guard Clauses
-        if (!player || (!player.playing && player.queue.size === 0)) {
+        if (!player) {
             return interaction.reply({
-                content: '❌ Nothing is currently playing.',
-                flags: [MessageFlags.Ephemeral],
+                content: '❌ There is no active player in this server.',
+                flags: replyFlags,
             });
         }
 
         // Send Initial Payload Statelessly
-        const payload = this.generateQueuePayload(player, 0, interaction.guild.name);
+        const payload = this.generateQueuePayload(player, 0, interaction.guild.name, replyFlags);
         await interaction.reply({ ...payload, withResponse: true });
     },
 
-    generateQueuePayload(player, page, guildName) {
+    generateQueuePayload(player, page, guildName, replyFlags) {
         const queueTracks = player.queue.all || []; 
         const currentTrack = player.current;
 
-        if (!currentTrack) {
-            return { content: '❌ Nothing is currently playing.', embeds: [], components: [], flags: [MessageFlags.Ephemeral] };
+        if (!player.playing && player.queue.size === 0) {
+            return { content: '❌ Nothing is currently playing.', embeds: [], components: [], flags: replyFlags };
         }
 
         // Combine standard queue with autoplay buffer if enabled
@@ -101,8 +103,8 @@ module.exports = {
 
         return {
             embeds: [embed],
-            components: maxPages > 1 ? [row] : [],
-            flags: [MessageFlags.Ephemeral]
+            components: [row],
+            flags: replyFlags
         };
     }
 };

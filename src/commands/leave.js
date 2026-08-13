@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const configManager = require('../services/configManager');
 const { getVoiceConnection } = require('@discordjs/voice');
 const configManager = require('../services/configManager');
 
@@ -8,16 +9,17 @@ module.exports = {
         .setDescription('Disconnect the bot from the voice channel'),
 
     async execute(interaction, client) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        await interaction.deferReply({ flags: replyFlags });
         
         const player = client.moonlink.players.get(interaction.guildId);
 
         // Check if the bot is even in a voice channel
         const botVoice = interaction.guild.members.cache.get(client.user.id)?.voice?.channel;
         if (!botVoice && !player) {
-            return interaction.editReply({
-                content: '❌ I\'m not in a voice channel.',
-            });
+            return interaction.editReply({ content: '❌ The bot is not in a voice channel.', flags: replyFlags });
         }
 
         // Clean up Autoplay history if it exists

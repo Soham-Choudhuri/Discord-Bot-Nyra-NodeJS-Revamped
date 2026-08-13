@@ -7,13 +7,17 @@ module.exports = {
         .setDescription('Wait for the current song to finish, then stop and clear the queue'),
 
     async execute(interaction, client) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        await interaction.deferReply({ flags: replyFlags });
 
         const player = client.moonlink.players.get(interaction.guildId);
 
         if (!player || !player.playing) {
             return interaction.editReply({
                 content: '❌ Nothing is currently playing.',
+                flags: replyFlags
             });
         }
 

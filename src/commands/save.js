@@ -2,6 +2,7 @@ const { SlashCommandBuilder, MessageFlags, EmbedBuilder } = require('discord.js'
 const queries = require('../database/queries');
 const { extractVideoId } = require('../lavalink/playerEvents');
 const { getPlaylistTracks } = require('../services/ytmusic');
+const configManager = require('../services/configManager');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,7 +14,10 @@ module.exports = {
                 .setRequired(false)
         ),
     async execute(interaction, client) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        await interaction.deferReply({ flags: replyFlags });
         const url = interaction.options.getString('url');
         const userId = interaction.user.id;
 
@@ -75,7 +79,7 @@ module.exports = {
         } else {
             const player = client.moonlink.players.get(interaction.guildId);
             if (!player || !player.playing) {
-                return interaction.editReply('❌ You must either provide a playlist URL, or be playing a track to add it to your saved playlist.');
+                return interaction.editReply({ content: '❌ Nothing is currently playing. Start a track to save it.', flags: replyFlags });
             }
 
             const currentTrack = player.current;

@@ -45,3 +45,17 @@ This update focuses on extreme hardware efficiency, specifically targeting a sec
 
 ### 6. Fatal Error State Management
 - **Graceful Fail-Safes**: Implemented a hard reset logic (`resetToDefaultState`) to cleanly handle fatal fetching errors on empty queues, ensuring the bot resets to a clean state without crashing or locking up the voice channel.
+
+## Update 3: The Interaction Update
+
+This update introduces dynamic configuration capabilities for server admins without compromising the core stateless architecture and zero event-loop blocking principles.
+
+### 1. Dynamic Reply Mode (Ephemeral vs Global)
+- **Zero-Latency Database Integration**: Added `reply_mode` to the SQLite `settings` table, utilizing `better-sqlite3` prepared statements and WAL mode for maximum I/O efficiency.
+- **ConfigManager Memory Cache**: The setting is instantly cached into the V8 memory heap (`configManager`). When commands are executed, the bot checks `config.reply_mode` natively in RAM, ensuring zero event-loop blocking disk reads.
+- **Global Command Audit**: Audited all 15 command files (`/stream`, `/queue`, `/mix`, `/autoplay`, etc.) to dynamically apply `MessageFlags.Ephemeral` based on the server's setting, replacing hardcoded ephemeral responses.
+
+### 2. Dynamic Role Whitelist (Admin Override)
+- **Discord Native Component**: Implemented Discord's native `RoleSelectMenuBuilder` in the `/settings` dashboard, generating a dynamic, searchable dropdown containing every role in the server.
+- **Stateless Architecture Preserved**: Avoided memory-leaking active collectors (`createMessageComponentCollector`). The selection is intercepted entirely in the stateless `interactionCreate.js` global router.
+- **Dynamic Security Check**: Replaced the OS-level `.env` user ID check with a dynamic role check: `interaction.member.roles.cache.has(config.whitelist_role)`. Any user holding this designated DJ role instantly bypasses all channel restrictions and dashboard locks. Server owners natively bypass these restrictions by default.

@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const configManager = require('../services/configManager');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,13 +16,17 @@ module.exports = {
                 )),
 
     async execute(interaction, client) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        await interaction.deferReply({ flags: replyFlags });
 
         const player = client.moonlink.players.get(interaction.guildId);
 
         if (!player || (!player.playing && player.queue.size === 0)) {
             return interaction.editReply({
                 content: '❌ Nothing is currently playing.',
+                flags: replyFlags
             });
         }
 

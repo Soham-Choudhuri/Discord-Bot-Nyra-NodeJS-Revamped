@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, MessageFlags, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 const queries = require('../database/queries');
+const configManager = require('../services/configManager');
 
 const ITEMS_PER_PAGE = 15;
 
@@ -41,8 +42,7 @@ const generateViewPayload = (userId, playlistName, totalTracks, targetPage) => {
     return {
         content: null,
         embeds: [generateEmbed(userId, playlistName, totalTracks, targetPage)],
-        components: Math.ceil(totalTracks / ITEMS_PER_PAGE) > 1 ? [generateButtons(totalTracks, targetPage)] : [],
-        flags: [MessageFlags.Ephemeral]
+        components: Math.ceil(totalTracks / ITEMS_PER_PAGE) > 1 ? [generateButtons(totalTracks, targetPage)] : []
     };
 };
 
@@ -54,18 +54,21 @@ module.exports = {
     generateButtons,
     generateViewPayload,
     async execute(interaction) {
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        await interaction.deferReply({ flags: replyFlags });
 
         const row = queries.getPlaylistName.get(interaction.user.id);
         if (!row) {
-            return interaction.editReply('❌ You do not have a saved playlist. Use `/save <url>` first to link one.');
+            return interaction.editReply({ content: '❌ You do not have a saved playlist. Use `/save <url>` first to link one.', flags: replyFlags });
         }
 
         const countRow = queries.getPlaylistCount.get(interaction.user.id);
         const totalTracks = countRow.total;
 
         if (totalTracks === 0) {
-            return interaction.editReply('❌ Your saved playlist is empty.');
+            return interaction.editReply({ content: '❌ Your saved playlist is empty.', flags: replyFlags });
         }
 
         const payload = generateViewPayload(interaction.user.id, row.playlist_name, totalTracks, 0);
