@@ -1,4 +1,3 @@
-process.env.UV_THREADPOOL_SIZE = 8;
 require('dotenv').config();
 
 const { Client, GatewayIntentBits, Options } = require('discord.js');

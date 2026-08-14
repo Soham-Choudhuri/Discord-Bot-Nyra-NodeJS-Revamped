@@ -63,13 +63,6 @@ class AutoplayManager {
         // If buffer is empty, we MUST wait for the fill
         if (this.buffer.length === 0) {
             await this.fillBuffer(config, artistHistory);
-        } else if (this.buffer.length <= 1) {
-            // Low water mark: Pre-fetch asynchronously after NodeLink UDP pipeline stabilizes (3s delay)
-            if (!this.fetchPromise) {
-                setTimeout(() => {
-                    this.fillBuffer(config, artistHistory).catch(() => {});
-                }, 3000);
-            }
         }
         
         return this.buffer.shift() || null;

@@ -18,7 +18,7 @@ export default {
       sourceWorkerExecArgv: [] // Extra Node.js args for source workers
     },
     specializedSourceWorker: {
-      enabled: true, // If true, source loading (search, lyrics, etc.) is delegated to dedicated workers to prevent voice worker lag
+      enabled: false, // Disabled to prevent 3 extra threads from starving the dual-core i3
       count: 1, // Number of separate process clusters for source operations
       microWorkers: 2, // Number of worker threads per process cluster
       tasksPerWorker: 32, // Number of parallel tasks each micro-worker can handle before queuing
@@ -37,7 +37,7 @@ export default {
       targetUtilization: 0.7, // Target utilization for scaling up/down
       scaleUpThreshold: 0.75, // Utilization threshold to scale up
       scaleDownThreshold: 0.3, // Utilization threshold to scale down
-      checkIntervalMs: 5000, // Interval to check for scaling needs
+      checkIntervalMs: 0, // Interval to check for scaling needs
       idleWorkerTimeoutMs: 60000, // Time in ms an idle worker should wait before being removed
       queueLengthScaleUpFactor: 5, // How many commands in queue per active worker trigger scale up
       lagPenaltyLimit: 60, // Event loop lag threshold (ms) to penalize worker cost
@@ -73,7 +73,7 @@ export default {
   },
   connection: {
     logAllChecks: false,
-    interval: 300000, // 5 minutes
+    interval: 86400000, // 24 hours
     timeout: 10000, // 10 seconds
     thresholds: {
       bad: 1, // Mbps
@@ -83,7 +83,7 @@ export default {
   maxSearchResults: 10,
   maxAlbumPlaylistLength: 500,
   playerUpdateInterval: 2000,
-  statsUpdateInterval: 30000,
+  statsUpdateInterval: 86400000,
   trackStuckThresholdMs: 30000,
   eventTimeoutMs: 15000,
   zombieThresholdMs: 60000,
@@ -126,8 +126,8 @@ export default {
       timescale: true
     }
   },
-  defaultSearchSource: ['youtube', 'spotify'],
-  unifiedSearchSources: ['youtube', 'spotify'],
+  defaultSearchSource: ['youtube'],
+  unifiedSearchSources: ['youtube'],
   sources: {
     deezer: { enabled: false },
     vimeo: { enabled: false },
@@ -188,7 +188,7 @@ export default {
     deezer: {
       // arl: '',
       // decryptionKey: '',
-      enabled: true
+      enabled: false
     },
     bandcamp: {
       enabled: false
@@ -239,7 +239,7 @@ export default {
     },
     vimeo: {
       // Note: not 100% of the songs are currently working (but most should.), because i need to code a different extractor for every year (2010, 2011, etc. not all are done)
-      enabled: true
+      enabled: false
     },
     iheartradio: {
       enabled: false
@@ -391,7 +391,7 @@ export default {
       enabled: false
     },
     spotify: {
-      enabled: true,
+      enabled: false,
       clientId: '',
       clientSecret: '',
       externalAuthUrl: 'http://get.1lucas1apk.fun/spotify/gettoken', // URL to external token provider (e.g. http://localhost:8080/api/token - use https://github.com/topi314/spotify-tokener or https://github.com/1Lucas1apk/gettoken)
@@ -499,14 +499,14 @@ export default {
       enabled: false
     },
     musixmatch: {
-      enabled: true
+      enabled: false
       // signatureSecret: ''
     },
     deezer: {
       enabled: false
     },
     lrclib: {
-      enabled: true
+      enabled: false
     },
     letrasmus: {
       enabled: false
@@ -526,12 +526,12 @@ export default {
       enabled: false
     },
     wikipedia: {
-      enabled: true
+      enabled: false
     }
   },
   audio: {
-    quality: 'medium', // high, medium, low, lowest
-    bufferDurationMs: 1000, // Explicitly attempt to expand Opus packet buffer to prevent microstutters
+    quality: 'high', // high, medium, low, lowest
+    bufferDurationMs: 400, // Explicitly attempt to expand Opus packet buffer to prevent microstutters
     encryption: 'aead_aes256_gcm_rtpsize',
     resamplingQuality: 'fastest', // best, medium, fastest, zero order holder, linear
     loudnessNormalizer: false, // Enable/disable AGC globally
@@ -647,7 +647,7 @@ export default {
     }
   },
   metrics: {
-    enabled: true,
+    enabled: false,
     authorization: {
       type: 'Bearer', // Bearer or Basic.
       username: 'admin',

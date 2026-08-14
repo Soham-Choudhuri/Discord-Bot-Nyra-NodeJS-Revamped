@@ -226,10 +226,13 @@ function registerPlayerEvents(client) {
             console.error(`❌ Track History Insert Error:`, error.message);
         }
 
-        // --- Strategic Garbage Collection ---
-        // Run the Stop-The-World sweep exclusively in the 50ms gap between songs
-        // to keep RAM low without stuttering the active UDP pipeline!
+        // --- Strategic Garbage Collection & WAL Checkpoint ---
+        // Run the Stop-The-World sweep and synchronous disk writes exclusively in the 50ms gap between songs
+        // to keep RAM low and prevent disk I/O from stuttering the active UDP pipeline!
         if (global.gc) global.gc();
+        try {
+            queries.checkpointWAL();
+        } catch(e) {}
     });
 
     // ─── Queue End Event (The Autoplay & JIT Engine) ─────────────────

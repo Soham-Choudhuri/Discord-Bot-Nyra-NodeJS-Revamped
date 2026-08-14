@@ -15,7 +15,34 @@ module.exports = {
                     { name: 'Static (Consistent Vibe)', value: 'static' },
                     { name: 'Dynamic (Evolving Vibe)', value: 'dynamic' }
                 )
+        )
+        .addStringOption(option =>
+            option.setName('seed')
+                .setDescription('Start Discovery Mode using a specific track from your saved playlist')
+                .setAutocomplete(true)
+                .setRequired(false)
         ),
+    async autocomplete(interaction, client) {
+        const focusedValue = interaction.options.getFocused();
+        const userId = interaction.user.id;
+        
+        let results;
+        if (!focusedValue) {
+            results = queries.getPlaylistAutocompleteEmpty.all(userId);
+        } else {
+            results = queries.searchPlaylistAutocomplete.all(userId, focusedValue, focusedValue, focusedValue);
+        }
+
+        const choices = results.map(track => {
+            const nameStr = `[${track.track_id}] ${track.artist} - ${track.title}`;
+            return {
+                name: nameStr.length > 100 ? nameStr.substring(0, 97) + '...' : nameStr,
+                value: track.video_id
+            };
+        });
+
+        await interaction.respond(choices);
+    },
     async execute(interaction, client) {
         const config = configManager.get(interaction.guildId);
         const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
@@ -54,14 +81,25 @@ module.exports = {
             }
             if (!player.get('sessionOwner')) player.set('sessionOwner', interaction.user);
             
-            const allTracks = queries.getAllPlaylistTrackIds.all(userId);
-            if (!allTracks || allTracks.length === 0) {
-                return interaction.editReply('❌ Your saved playlist is empty.');
+            const seedInput = interaction.options.getString('seed');
+            
+            if (seedInput) {
+                const specificTrack = queries.getPlaylistTrackById.get(userId, seedInput);
+                if (specificTrack) {
+                    playlistSeeds = specificTrack.video_id;
+                    discoverySeedTrack = specificTrack;
+                }
             }
             
-            const randomTrack = allTracks[Math.floor(Math.random() * allTracks.length)];
-            playlistSeeds = randomTrack.video_id; // Pass a single random seed directly to the manager
-            discoverySeedTrack = randomTrack;
+            if (!playlistSeeds) {
+                const allTracks = queries.getAllPlaylistTrackIds.all(userId);
+                if (!allTracks || allTracks.length === 0) {
+                    return interaction.editReply('❌ Your saved playlist is empty.');
+                }
+                const randomTrack = allTracks[Math.floor(Math.random() * allTracks.length)];
+                playlistSeeds = randomTrack.video_id;
+                discoverySeedTrack = randomTrack;
+            }
 
             startingFromEmpty = true;
         }

@@ -10,7 +10,7 @@ const generateEmbed = (userId, playlistName, totalTracks, pageIndex) => {
     
     const slice = queries.getPlaylistSlice.all(userId, ITEMS_PER_PAGE, start);
 
-    const description = slice.map((t, idx) => `**${start + idx + 1}.** ${t.title} - *${t.artist}*`).join('\n');
+    const description = slice.map((t) => `**${t.track_id}.** ${t.title} - *${t.artist}*`).join('\n');
 
     return new EmbedBuilder()
         .setColor(0x7C3AED)

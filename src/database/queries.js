@@ -26,12 +26,51 @@ module.exports = {
     getSavedPlaylist: db.prepare('SELECT * FROM user_saved_playlist WHERE user_id = ?'),
     getPlaylistName: db.prepare('SELECT playlist_name FROM user_saved_playlist WHERE user_id = ?'),
     getPlaylistCount: db.prepare('SELECT COUNT(*) as total FROM playlist_tracks WHERE user_id = ?'),
-    getPlaylistSlice: db.prepare('SELECT title, artist FROM playlist_tracks WHERE user_id = ? LIMIT ? OFFSET ?'),
+    getPlaylistSlice: db.prepare(`
+        WITH NumberedPlaylist AS (
+            SELECT title, artist, ROW_NUMBER() OVER(ORDER BY rowid) as track_id
+            FROM playlist_tracks
+            WHERE user_id = ?
+        )
+        SELECT title, artist, track_id 
+        FROM NumberedPlaylist 
+        LIMIT ? OFFSET ?
+    `),
     deletePlaylistTracks: db.prepare('DELETE FROM playlist_tracks WHERE user_id = ?'),
     deletePlaylistMeta: db.prepare('DELETE FROM user_saved_playlist WHERE user_id = ?'),
     upsertPlaylistMeta: db.prepare('INSERT OR REPLACE INTO user_saved_playlist (user_id, playlist_id, playlist_name) VALUES (?, ?, ?)'),
     insertPlaylistTrack: db.prepare('INSERT OR IGNORE INTO playlist_tracks (user_id, video_id, title, artist) VALUES (?, ?, ?, ?)'),
     getAllPlaylistTrackIds: db.prepare('SELECT video_id, title, artist FROM playlist_tracks WHERE user_id = ?'),
+    
+    // Autoplay Seed Resolution Queries
+    searchPlaylistAutocomplete: db.prepare(`
+        WITH NumberedPlaylist AS (
+            SELECT video_id, title, artist, ROW_NUMBER() OVER(ORDER BY rowid) AS track_id
+            FROM playlist_tracks
+            WHERE user_id = ?
+        )
+        SELECT * FROM NumberedPlaylist
+        WHERE CAST(track_id AS TEXT) = ? 
+           OR title LIKE '%' || ? || '%' 
+           OR artist LIKE '%' || ? || '%'
+        LIMIT 25;
+    `),
+    getPlaylistAutocompleteEmpty: db.prepare(`
+        WITH NumberedPlaylist AS (
+            SELECT video_id, title, artist, ROW_NUMBER() OVER(ORDER BY rowid) AS track_id
+            FROM playlist_tracks
+            WHERE user_id = ?
+        )
+        SELECT * FROM NumberedPlaylist LIMIT 25;
+    `),
+    getPlaylistTrackById: db.prepare(`
+        WITH NumberedPlaylist AS (
+            SELECT video_id, title, artist, ROW_NUMBER() OVER(ORDER BY rowid) AS track_id
+            FROM playlist_tracks
+            WHERE user_id = ?
+        )
+        SELECT * FROM NumberedPlaylist WHERE video_id = ? LIMIT 1;
+    `),
 
     // Favorites
     getFavorites: db.prepare('SELECT video_id, track_url, track_title, track_author FROM user_favorites WHERE user_id = ? ORDER BY added_at DESC'),
@@ -59,3 +98,11 @@ module.exports.deleteFullPlaylist = db.transaction((userId) => {
     module.exports.deletePlaylistTracks.run(userId);
     module.exports.deletePlaylistMeta.run(userId);
 });
+
+module.exports.checkpointWAL = () => {
+    try {
+        db.pragma('wal_checkpoint(PASSIVE)');
+    } catch (e) {
+        console.error('WAL Checkpoint Error:', e.message);
+    }
+};

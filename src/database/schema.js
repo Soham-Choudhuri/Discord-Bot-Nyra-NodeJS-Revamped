@@ -12,6 +12,7 @@ const db = new Database(path.join(dbDir, 'nyra.db'));
 
 // Optimization settings
 db.pragma('journal_mode = WAL');
+db.pragma('wal_autocheckpoint = 0'); // Prevents random synchronous disk writes during active playback
 db.pragma('synchronous = NORMAL');
 db.pragma('temp_store = MEMORY'); // Forces temporary tables/indices into RAM, bypassing disk I/O completely
 db.pragma('cache_size = -16000'); // Hard-caps SQLite cache at ~16MB. A negative value specifies memory in KB.

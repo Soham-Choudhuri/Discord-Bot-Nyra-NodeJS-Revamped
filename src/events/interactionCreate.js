@@ -42,6 +42,19 @@ module.exports = {
             return;
         }
 
+        // ─── Autocomplete Handler ──────────────────────────────────
+        if (interaction.isAutocomplete()) {
+            const command = client.commands.get(interaction.commandName);
+            if (!command) return;
+
+            try {
+                if (command.autocomplete) await command.autocomplete(interaction, client);
+            } catch (error) {
+                console.error(`❌ Error executing autocomplete for /${interaction.commandName}:`, error);
+            }
+            return;
+        }
+
         // ─── Button Clicks (Queue Pagination) ───────────────────────
         if (interaction.isButton() && interaction.customId.startsWith('queue_')) {
             const parts = interaction.customId.split('_');

@@ -59,3 +59,20 @@ This update introduces dynamic configuration capabilities for server admins with
 - **Discord Native Component**: Implemented Discord's native `RoleSelectMenuBuilder` in the `/settings` dashboard, generating a dynamic, searchable dropdown containing every role in the server.
 - **Stateless Architecture Preserved**: Avoided memory-leaking active collectors (`createMessageComponentCollector`). The selection is intercepted entirely in the stateless `interactionCreate.js` global router.
 - **Dynamic Security Check**: Replaced the OS-level `.env` user ID check with a dynamic role check: `interaction.member.roles.cache.has(config.whitelist_role)`. Any user holding this designated DJ role instantly bypasses all channel restrictions and dashboard locks. Server owners natively bypass these restrictions by default.
+
+## Update 4: The Personalization Update
+
+This update focuses on securing the playback stability of the hardware environment and granting users granular control over their autoplay discovery sessions.
+
+### 1. NodeLink Bare Metal Optimizations
+- **Plugin Eradication**: Stripped away all unused audio plugins (lyrics, wikis, spotify) from the NodeLink package to prevent dynamic module loading and execution, freeing up V8 thread loading.
+- **Telemetry Disabled**: Disabled telemetry, Prometheus metrics, and specialized scaling workers to save crucial CPU cycles on the Intel i3 architecture.
+- **Audio Configuration Fine-Tuning**: Hardcoded audio settings (`quality: 'low'`, `resamplingQuality: 'fastest'`, `bufferDurationMs: 400`) to strictly preserve dual-core processor bandwidth and completely eliminate micro-stutters during heavy event-loop calculations.
+
+### 2. Advanced Autoplay Seed Control
+- **Resilient Seed Hierarchy**: Hardened the fallback hierarchy for autoplay seed recovery (Favorites -> Saved Playlist -> History -> Config Default).
+- **Discovery Mode Ignition**: Rebuilt the `/autoplay` command to accept a `seed` argument. Users can now explicitly select a specific track from their saved playlist using a Discord Autocomplete interface to bypass the random seed logic and take total control over how their session begins.
+
+### 3. Database Architecture Innovations (Zero Event-Loop Blocking)
+- **SQLite CTE Native Filtering**: Shifted away from JS-heavy `.filter()` and `.map()` operations. The entire Autocomplete search pipeline is now powered by pure C++ SQLite Common Table Expressions (CTEs), utilizing mathematically perfect `LIMIT 25` slicing to keep the Node.js event loop perfectly untouched.
+- **Unified ID Synchronization**: Implemented dynamic `ROW_NUMBER() OVER(ORDER BY rowid)` index generation. This guarantees that the explicit track IDs displayed in the `/view` endpoint mathematically and flawlessly map 1:1 with the new `/autoplay` autocomplete endpoint, completely independently of physical database schema IDs.
