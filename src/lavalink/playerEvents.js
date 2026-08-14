@@ -234,7 +234,8 @@ function registerPlayerEvents(client) {
 
     // ─── Queue End Event (The Autoplay & JIT Engine) ─────────────────
     client.moonlink.on("queueEnd", async (player) => {
-        const guildId = player.guildId;
+        setTimeout(async () => {
+            const guildId = player.guildId;
 
         // 1. Check the Just-In-Time Favorites Queue first
         const favoritesQueue = player.get('favoritesQueue');
@@ -258,11 +259,6 @@ function registerPlayerEvents(client) {
 
                 if (searchResult.tracks && searchResult.tracks.length > 0) {
                     await player.queue.add(searchResult.tracks[0]);
-                    
-                    // Strategic Event Loop Yielding & Buffer Priming
-                    // Gives Node.js a moment to flush pending queues AND gives NodeLink half a second to prefetch YouTube audio chunks
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
                     await player.play();
                     
                     // The "Play-Paused" UDP Pre-Warm (For the very first track in the session)
@@ -342,11 +338,6 @@ function registerPlayerEvents(client) {
                             searchResult.tracks[0].signature = nextMeta.signature;
                         }
                         await player.queue.add(searchResult.tracks[0]);
-                        
-                        // Strategic Event Loop Yielding & Buffer Priming
-                        // Gives Node.js a moment to flush pending queues AND gives NodeLink half a second to prefetch YouTube audio chunks
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        
                         await player.play();
                         
                         // The "Play-Paused" UDP Pre-Warm (For the very first track in the session)
@@ -400,6 +391,7 @@ function registerPlayerEvents(client) {
         // Cleanup memory for the next session
         if (autoplayManager) autoplayManager.playedIds.clear();
         player.set('favoritesQueue', null);
+        }, 1000);
     });
 
     // ─── Error Handling Improvement ──────────────────────────────────

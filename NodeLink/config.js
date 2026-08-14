@@ -6,7 +6,7 @@ export default {
     useBunServer: false // set to true to use Bun.serve websocket (experimental)
   },
   cluster: {
-    enabled: true, // active cluster (or use env CLUSTER_ENABLED)
+    enabled: false, // active cluster (or use env CLUSTER_ENABLED)
     workers: 1, // 0 => uses os.cpus().length, or specify a number (1 = 2 processes total: master + 1 worker)
     minWorkers: 1, // Minimum workers to keep alive (improves availability during bursts)
     runtime: {
@@ -530,8 +530,8 @@ export default {
     }
   },
   audio: {
-    quality: 'high', // high, medium, low, lowest
-    bufferDurationMs: 400, // Explicitly attempt to expand Opus packet buffer to prevent microstutters
+    quality: 'medium', // high, medium, low, lowest
+    bufferDurationMs: 1000, // Explicitly attempt to expand Opus packet buffer to prevent microstutters
     encryption: 'aead_aes256_gcm_rtpsize',
     resamplingQuality: 'fastest', // best, medium, fastest, zero order holder, linear
     loudnessNormalizer: false, // Enable/disable AGC globally

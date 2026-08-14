@@ -25,6 +25,7 @@ module.exports = {
         let player = client.moonlink.players.get(interaction.guildId);
         let startingFromEmpty = false;
         let playlistSeeds = null;
+        let discoverySeedTrack = null;
         const userId = interaction.user.id;
 
         if (!player || (!player.playing && player.queue.size === 0)) {
@@ -60,6 +61,7 @@ module.exports = {
             
             const randomTrack = allTracks[Math.floor(Math.random() * allTracks.length)];
             playlistSeeds = randomTrack.video_id; // Pass a single random seed directly to the manager
+            discoverySeedTrack = randomTrack;
 
             startingFromEmpty = true;
         }
@@ -101,7 +103,7 @@ module.exports = {
             player.set('autoplayManager', autoplayManager);
             
             if (startingFromEmpty) {
-                await interaction.editReply(`♾️ **Discovery Mode: ON** (${mode === 'static' ? 'Static' : 'Dynamic'})\nBootstrapping from your saved playlist...`);
+                await interaction.editReply(`♾️ **Discovery Mode: ON** (${mode === 'static' ? 'Static' : 'Dynamic'})\nBootstrapping from your saved playlist seed:\n🎵 **${discoverySeedTrack.title}** by **${discoverySeedTrack.artist}**`);
                 
                 (async () => {
                     if (player.get('needs_warmup')) {

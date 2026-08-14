@@ -139,7 +139,22 @@ class AutoplayManager {
                         console.error('[AutoplayManager] SQLite Recovery failed:', err.message);
                     }
                     
-                    // Priority 2: Fallback to Played IDs
+                    // Priority 2: Dynamic Recovery via Saved Playlist
+                    if (!newSeed) {
+                        try {
+                            const playlist = queries.getAllPlaylistTrackIds.all(this.userId);
+                            if (playlist && playlist.length > 0) {
+                                const track = playlist[Math.floor(Math.random() * playlist.length)];
+                                if (track && track.video_id) {
+                                    newSeed = track.video_id;
+                                }
+                            }
+                        } catch (err) {
+                            console.error('[AutoplayManager] SQLite Playlist Recovery failed:', err.message);
+                        }
+                    }
+                    
+                    // Priority 3: Fallback to Played IDs
                     if (!newSeed) {
                         const playedArray = Array.from(this.playedIds);
                         const candidates = playedArray.filter(id => id !== this.seedVideoId);
