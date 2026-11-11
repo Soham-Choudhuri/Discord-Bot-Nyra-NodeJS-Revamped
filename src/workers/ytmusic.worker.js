@@ -43,16 +43,24 @@ async function getUpNexts(videoId) {
 
 async function getAdvancedUpNexts(videoId, filters = {}) {
     if (!initialized) await initialize();
-    let res;
-    try {
-        res = await ytmusic.constructRequest('next', {
-            videoId,
-            playlistId: `RDAMVM${videoId}`,
-            isAudioOnly: true
-        });
-    } catch (error) {
-        console.error(`[Worker] AdvancedUpNext network error:`, error.message);
-        return [];
+    let res = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            res = await ytmusic.constructRequest('next', {
+                videoId,
+                playlistId: `RDAMVM${videoId}`,
+                isAudioOnly: true
+            });
+            break; // Success, break out of the retry loop
+        } catch (error) {
+            console.error(`[Worker] AdvancedUpNext network error (Attempt ${attempt}/3):`, error.message);
+            if (attempt === 3) {
+                console.error(`[Worker] AdvancedUpNext exhausted all 3 network attempts. Aborting.`);
+                return [];
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
     }
     
     const tabs = res?.contents?.singleColumnMusicWatchNextResultsRenderer?.tabbedRenderer?.watchNextTabbedResultsRenderer?.tabs[0]?.tabRenderer?.content?.musicQueueRenderer?.content?.playlistPanelRenderer?.contents;

@@ -35,7 +35,7 @@ module.exports = {
             const textChannel = client.channels.cache.get(channelId);
             if (textChannel) {
                 textChannel.messages.fetch(npMessageId).then(msg => {
-                    if (msg && msg.deletable) msg.delete();
+                    if (msg && msg.deletable) msg.delete().catch(() => null);
                 }).catch(() => {});
             }
             player.set('np_message_id', null);

@@ -14,29 +14,30 @@ module.exports = {
         ),
 
     async execute(interaction, client) {
+        const config = configManager.get(interaction.guildId);
+        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        await interaction.deferReply({ flags: replyFlags });
+
         const member = interaction.member;
         const voiceChannel = member?.voice?.channel;
-        const config = configManager.get(interaction.guildId);
 
         // Validate: user must be in a voice channel
         if (!voiceChannel) {
-            return interaction.reply({
+            return interaction.editReply({
                 content: '❌ You must be in a voice channel to use this command.',
                 flags: [MessageFlags.Ephemeral],
             });
         }
 
         const player = client.moonlink.players.get(interaction.guildId);
-        const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
 
         if (player && player.queue.size >= config.max_queue_size) {
-            return interaction.reply({
+            return interaction.editReply({
                 content: `❌ The queue has reached the maximum size of **${config.max_queue_size}** tracks.`,
                 flags: replyFlags,
             });
         }
-
-        await interaction.deferReply({ flags: replyFlags });
 
         const query = interaction.options.getString('query');
 

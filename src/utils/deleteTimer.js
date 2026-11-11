@@ -35,7 +35,7 @@ async function autoDelete(target, guildId) {
                 try {
                     const channel = client.channels.cache.get(channelId);
                     if (channel) {
-                        await channel.messages.delete(messageId);
+                        await channel.messages.delete(messageId).catch(() => null);
                     }
                 } catch (e) {
                     // Message might already be deleted

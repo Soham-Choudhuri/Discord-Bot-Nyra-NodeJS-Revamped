@@ -9,7 +9,8 @@ const KEY_TO_QUERY_MAP = {
     'artist_memory': 'updateArtistMemory',
     'regex_blacklist': 'updateRegexBlacklist',
     'reply_mode': 'updateReplyMode',
-    'whitelist_role': 'updateWhitelistRole'
+    'whitelist_role': 'updateWhitelistRole',
+    'global_history_enabled': 'updateGlobalHistoryEnabled'
 };
 
 class ConfigManager {

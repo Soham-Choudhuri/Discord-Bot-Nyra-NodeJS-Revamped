@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags, ComponentType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, MessageFlags, ComponentType } = require('discord.js');
 const queries = require('../database/queries');
 const configManager = require('../services/configManager');
 const { extractVideoId } = require('../lavalink/playerEvents');
@@ -27,6 +27,47 @@ module.exports = {
                 .setName('remove')
                 .setDescription('Remove a track from your favorites')
         ),
+
+    generateFavoritesPayload(userId, username, avatarURL, totalTracks, targetPage) {
+        const tracksPerPage = 15;
+        const maxPages = Math.ceil(totalTracks / tracksPerPage) || 1;
+
+        if (targetPage < 0) targetPage = 0;
+        if (targetPage >= maxPages) targetPage = maxPages - 1;
+
+        const offset = targetPage * tracksPerPage;
+        const slice = queries.getFavoritesSlice.all(userId, tracksPerPage, offset);
+
+        const embed = new EmbedBuilder()
+            .setColor(0x7C3AED)
+            .setTitle(`❤️ ${username}'s Favorites`)
+            .setThumbnail(avatarURL);
+
+        let description = '';
+        for (let i = 0; i < slice.length; i++) {
+            const track = slice[i];
+            const num = String(offset + i + 1).padStart(2, '0');
+            description += `\`${num}.\` **${track.track_title}** — ${track.track_author}\n`;
+        }
+
+        embed.setDescription(description)
+            .setFooter({ text: `Page ${targetPage + 1} of ${maxPages}  •  ${totalTracks} total tracks` });
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`fav_view_${userId}_${targetPage - 1}`)
+                .setLabel('Previous')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(targetPage === 0),
+            new ButtonBuilder()
+                .setCustomId(`fav_view_${userId}_${targetPage + 1}`)
+                .setLabel('Next')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(targetPage === maxPages - 1)
+        );
+
+        return { embeds: [embed], components: [row] };
+    },
 
     async execute(interaction, client) {
         const config = configManager.get(interaction.guildId);
@@ -66,7 +107,20 @@ module.exports = {
             }
         }
 
-        // Fetch user's favorites from the database (Ordered newest to oldest)
+        // ─── Subcommand: SEE ──────────────────────────────────────────
+        if (subcommand === 'see') {
+            const countRow = queries.getFavoritesCount.get(userId);
+            if (!countRow || countRow.total === 0) {
+                return interaction.editReply({
+                    content: '📭 You haven\'t saved any tracks yet! Click the ❤️ button when a song is playing to save it.'
+                });
+            }
+
+            const payload = this.generateFavoritesPayload(userId, interaction.user.username, interaction.user.displayAvatarURL(), countRow.total, 0);
+            return interaction.editReply(payload);
+        }
+
+        // Fetch user's favorites from the database for REMOVE and STREAM
         let savedTracks = [];
         try {
             savedTracks = queries.getFavorites.all(userId);
@@ -79,33 +133,6 @@ module.exports = {
             return interaction.editReply({
                 content: '📭 You haven\'t saved any tracks yet! Click the ❤️ button when a song is playing to save it.'
             });
-        }
-
-        // ─── Subcommand: SEE ──────────────────────────────────────────
-        if (subcommand === 'see') {
-            const embed = new EmbedBuilder()
-                .setColor(0x7C3AED)
-                .setTitle(`❤️ ${interaction.user.username}'s Favorites`)
-                .setThumbnail(interaction.user.displayAvatarURL());
-
-            let description = '';
-            // Display up to 15 tracks to keep the embed clean
-            const displayLimit = Math.min(savedTracks.length, 15);
-
-            for (let i = 0; i < displayLimit; i++) {
-                const track = savedTracks[i];
-                const num = String(i + 1).padStart(2, '0');
-                description += `\`${num}.\` **${track.track_title}** — ${track.track_author}\n`;
-            }
-
-            if (savedTracks.length > 15) {
-                description += `\n*...and ${savedTracks.length - 15} more saved track(s)*`;
-            }
-
-            embed.setDescription(description)
-                .setFooter({ text: `${savedTracks.length} total tracks saved` });
-
-            return interaction.editReply({ embeds: [embed] });
         }
 
         // ─── Subcommand: REMOVE ───────────────────────────────────────

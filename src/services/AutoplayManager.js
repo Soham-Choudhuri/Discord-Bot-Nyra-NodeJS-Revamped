@@ -106,6 +106,17 @@ class AutoplayManager {
                                 playlistSignatures.push({ title: r.title, artist: r.artist });
                             }
                         });
+
+                        // 3. Check their explicitly saved favorites
+                        // Unifying favorites directly into the playlist payload prevents modifying the E-Core worker.
+                        // Deduplication is handled natively by the Worker's Set initialization.
+                        const favRows = queries.getFavorites.all(this.userId);
+                        favRows.forEach(r => {
+                            if (r.video_id) playlistTrackIds.add(r.video_id);
+                            if (r.track_title && r.track_author) {
+                                playlistSignatures.push({ title: r.track_title, artist: r.track_author });
+                            }
+                        });
                 } catch (e) {
                     console.error('[AutoplayManager] Error fetching persistent data:', e.message);
                 }

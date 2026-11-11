@@ -28,6 +28,17 @@ module.exports = {
                 
                 // Auto-Delete has been removed since all commands are Ephemeral
             } catch (error) {
+                if (error.code === 10062) {
+                    console.warn(`⚠️ [WARN] Interaction timeout (10062) triggered by command: /${interaction.commandName}`);
+                    
+                    if (interaction.channel) {
+                        interaction.channel.send({ content: `<@${interaction.user.id}>, Discord's API is currently lagging. Please wait a moment and try your command again.` })
+                            .then(msg => setTimeout(() => msg.delete().catch(() => null), 5000))
+                            .catch(() => null);
+                    }
+                    return; // Stop execution to prevent further fallback failures
+                }
+
                 console.error(`❌ Error executing /${interaction.commandName}:`, error);
                 const replyData = { content: '❌ Something went wrong while executing this command.', flags: [MessageFlags.Ephemeral] };
                 
@@ -103,6 +114,31 @@ module.exports = {
             return;
         }
 
+        // ─── Button Clicks (Favorites Pagination) ───────────────────────
+        if (interaction.isButton() && interaction.customId.startsWith('fav_view_')) {
+            const parts = interaction.customId.split('_');
+            const targetUserId = parts[2];
+            let targetPage = parseInt(parts[3], 10);
+            
+            if (targetUserId !== interaction.user.id) {
+                return interaction.reply({ ephemeral: true, content: "You cannot navigate someone else's favorites!" });
+            }
+
+            if (isNaN(targetPage)) targetPage = 0; 
+            
+            const favCommand = client.commands.get('favorites');
+            if (favCommand && favCommand.generateFavoritesPayload) {
+                const countRow = queries.getFavoritesCount.get(interaction.user.id);
+                if (!countRow || countRow.total === 0) {
+                    return interaction.update({ content: '❌ Favorites not found.', embeds: [], components: [] }).catch(() => {});
+                }
+                
+                const payload = favCommand.generateFavoritesPayload(interaction.user.id, interaction.user.username, interaction.user.displayAvatarURL(), countRow.total, targetPage);
+                await interaction.update(payload).catch(() => {});
+            }
+            return;
+        }
+
         // ─── Select Menus ───────────────────────
         if (interaction.isStringSelectMenu()) {
 
@@ -126,8 +162,8 @@ module.exports = {
             if (interaction.customId === 'settings_menu') {
                 const setting = interaction.values[0];
 
-                // Direct Toggle for Verbose Mode or Reply Mode
-                if (setting === 'verbose_mode' || setting === 'reply_mode') {
+                // Direct Toggle for Verbose Mode, Reply Mode, or Global History
+                if (setting === 'verbose_mode' || setting === 'reply_mode' || setting === 'global_history_enabled') {
                     const newValue = config[setting] === 1 ? 0 : 1;
                     configManager.set(guildId, setting, newValue);
                     

@@ -8,6 +8,7 @@ To Do Instructions.md
 
 # Database and persistent data
 # We ignore the data folder as it contains the SQLite database
+_details/
 data/
 *.sqlite
 *.db

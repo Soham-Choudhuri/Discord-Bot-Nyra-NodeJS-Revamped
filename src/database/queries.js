@@ -15,6 +15,7 @@ module.exports = {
     updateRegexBlacklist: db.prepare('UPDATE settings SET regex_blacklist = ? WHERE guild_id = ?'),
     updateReplyMode: db.prepare('UPDATE settings SET reply_mode = ? WHERE guild_id = ?'),
     updateWhitelistRole: db.prepare('UPDATE settings SET whitelist_role = ? WHERE guild_id = ?'),
+    updateGlobalHistoryEnabled: db.prepare('UPDATE settings SET global_history_enabled = ? WHERE guild_id = ?'),
 
     // User Preferences & History
     getUserPref: db.prepare('SELECT is_tracking_enabled FROM user_preferences WHERE user_id = ?'),
@@ -74,6 +75,8 @@ module.exports = {
 
     // Favorites
     getFavorites: db.prepare('SELECT video_id, track_url, track_title, track_author FROM user_favorites WHERE user_id = ? ORDER BY added_at DESC'),
+    getFavoritesCount: db.prepare('SELECT COUNT(*) as total FROM user_favorites WHERE user_id = ?'),
+    getFavoritesSlice: db.prepare('SELECT video_id, track_url, track_title, track_author FROM user_favorites WHERE user_id = ? ORDER BY added_at DESC LIMIT ? OFFSET ?'),
     getFavoritesVideoIds: db.prepare('SELECT video_id FROM user_favorites WHERE user_id = ? AND video_id IS NOT NULL'),
     checkFavorite: db.prepare('SELECT 1 FROM user_favorites WHERE user_id = ? AND track_url = ?'),
     insertFavorite: db.prepare('INSERT INTO user_favorites (user_id, track_title, track_author, track_url, video_id) VALUES (?, ?, ?, ?, ?)'),

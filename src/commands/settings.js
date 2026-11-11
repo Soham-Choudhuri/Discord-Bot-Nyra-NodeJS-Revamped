@@ -26,15 +26,21 @@ module.exports = {
             .setTitle('⚙️ Nyra Dashboard')
             .setDescription('Configure Nyra settings for your server. Changes are applied instantly.')
             .addFields(
-                { name: '📊 Max Queue Size', value: `\`${config.max_queue_size}\` songs`, inline: true },
-                { name: '📝 Display Mode', value: config.verbose_mode === 1 ? '`Verbose` (Full Embeds)' : '`Compact` (Text Only)', inline: true },
-                { name: '♾️ Autoplay Seed', value: config.autoplay_seed ? `\`${config.autoplay_seed}\`` : '`Default` (Last Song)', inline: true },
-                { name: '⏳ Auto-Delete Timer', value: config.delete_timer > 0 ? `\`${config.delete_timer}s\`` : '`Disabled`', inline: true },
-                { name: '🔒 Command Channel', value: config.cmd_channel ? `<#${config.cmd_channel}>` : '`No Restriction`', inline: true },
-                { name: '🧠 Artist Memory', value: `\`${config.artist_memory}\` unique artists`, inline: true },
-                { name: '🚫 Regex Blacklist', value: `\`${config.regex_blacklist.length > 50 ? config.regex_blacklist.substring(0, 47) + '...' : config.regex_blacklist}\``, inline: true },
-                { name: '💬 Reply Mode', value: config.reply_mode === 1 ? '`Global` (Public)' : '`Ephemeral` (Private)', inline: true },
-                { name: '🛡️ Whitelist Role', value: config.whitelist_role ? `<@&${config.whitelist_role}>` : '`None`', inline: true }
+                { 
+                    name: '🎵 Playback & Algorithm', 
+                    value: `**Max Queue Size:** \`${config.max_queue_size}\` songs\n**Autoplay Seed:** ${config.autoplay_seed ? `\`${config.autoplay_seed}\`` : '`Default` (Last Song)'}\n**Artist Memory:** \`${config.artist_memory}\` unique artists\n**Regex Blacklist:** \`${config.regex_blacklist.length > 50 ? config.regex_blacklist.substring(0, 47) + '...' : config.regex_blacklist}\``, 
+                    inline: false 
+                },
+                { 
+                    name: '💬 Chat & Interface', 
+                    value: `**Display Mode:** ${config.verbose_mode === 1 ? '`Verbose` (Full Embeds)' : '`Compact` (Text Only)'}\n**Auto-Delete Timer:** ${config.delete_timer > 0 ? `\`${config.delete_timer}s\`` : '`Disabled`'}\n**Reply Mode:** ${config.reply_mode === 1 ? '`Global` (Public)' : '`Ephemeral` (Private)'}`, 
+                    inline: false 
+                },
+                { 
+                    name: '🛡️ Access & Moderation', 
+                    value: `**Command Channel:** ${config.cmd_channel ? `<#${config.cmd_channel}>` : '`No Restriction`'}\n**Whitelist Role:** ${config.whitelist_role ? `<@&${config.whitelist_role}>` : '`None`'}\n**Global History:** ${config.global_history_enabled === 1 ? '`Enabled`' : '`Disabled`'}`, 
+                    inline: false 
+                }
             )
             .setTimestamp();
 
@@ -45,58 +51,64 @@ module.exports = {
                     .setPlaceholder('Select a setting to modify...')
                     .addOptions([
                         {
-                            label: 'Max Queue Size',
+                            label: '🎵 | Max Queue Size',
                             description: 'Set the maximum number of songs allowed in the queue.',
                             value: 'max_queue_size',
                             emoji: '📊'
                         },
                         {
-                            label: 'Verbose vs. Compact Mode',
-                            description: 'Toggle between detailed embeds and simple text lines.',
-                            value: 'verbose_mode',
-                            emoji: '📝'
-                        },
-                        {
-                            label: 'Auto-Delete Timer',
-                            description: 'Set how long bot messages stay (0 to disable).',
-                            value: 'delete_timer',
-                            emoji: '⏳'
-                        },
-                        {
-                            label: 'Command Channel',
-                            description: 'Restrict bot commands to a specific channel.',
-                            value: 'cmd_channel',
-                            emoji: '🔒'
-                        },
-                        {
-                            label: 'Artist Memory',
-                            description: 'Set how many unique artists to avoid in autoplay.',
-                            value: 'artist_memory',
-                            emoji: '🧠'
-                        },
-                        {
-                            label: 'Regex Blacklist',
-                            description: 'Update the pattern for filtering unofficial content.',
-                            value: 'regex_blacklist',
-                            emoji: '🚫'
-                        },
-                        {
-                            label: 'Autoplay Seed',
+                            label: '🎵 | Autoplay Seed',
                             description: 'Set a custom permanent seed for the autoplay algorithm.',
                             value: 'autoplay_seed',
                             emoji: '♾️'
                         },
                         {
-                            label: 'Reply Mode',
+                            label: '🎵 | Artist Memory',
+                            description: 'Set how many unique artists to avoid in autoplay.',
+                            value: 'artist_memory',
+                            emoji: '🧠'
+                        },
+                        {
+                            label: '🎵 | Regex Blacklist',
+                            description: 'Update the pattern for filtering unofficial content.',
+                            value: 'regex_blacklist',
+                            emoji: '🚫'
+                        },
+                        {
+                            label: '💬 | Display Mode',
+                            description: 'Toggle between detailed embeds and simple text lines.',
+                            value: 'verbose_mode',
+                            emoji: '📝'
+                        },
+                        {
+                            label: '💬 | Auto-Delete Timer',
+                            description: 'Set how long bot messages stay (0 to disable).',
+                            value: 'delete_timer',
+                            emoji: '⏳'
+                        },
+                        {
+                            label: '💬 | Reply Mode',
                             description: 'Toggle if bot replies are visible to everyone.',
                             value: 'reply_mode',
                             emoji: '💬'
                         },
                         {
-                            label: 'Whitelist Role',
+                            label: '🛡️ | Command Channel',
+                            description: 'Restrict bot commands to a specific channel.',
+                            value: 'cmd_channel',
+                            emoji: '🔒'
+                        },
+                        {
+                            label: '🛡️ | Whitelist Role',
                             description: 'Set a role to bypass command and dashboard restrictions.',
                             value: 'whitelist_role',
                             emoji: '🛡️'
+                        },
+                        {
+                            label: '🛡️ | Global History',
+                            description: 'Toggle whether history logging is globally permitted on this server.',
+                            value: 'global_history_enabled',
+                            emoji: '📜'
                         }
                     ]),
             );

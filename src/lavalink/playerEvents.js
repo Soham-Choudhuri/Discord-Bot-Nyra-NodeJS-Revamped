@@ -174,7 +174,7 @@ function registerPlayerEvents(client) {
             if (npMessageId) {
                 try {
                     const oldMsg = await textChannel.messages.fetch(npMessageId);
-                    if (oldMsg && oldMsg.deletable) await oldMsg.delete();
+                    if (oldMsg && oldMsg.deletable) await oldMsg.delete().catch(() => null);
                 } catch (e) { }
             }
 
@@ -215,13 +215,14 @@ function registerPlayerEvents(client) {
         if (!videoId || !trackTitle || !trackAuthor) return;
 
         try {
+            const serverConfig = configManager.get(player.guildId);
             const prefs = queries.getUserPref.get(userId);
             
-            if (prefs && prefs.is_tracking_enabled === 1) {
-                const trackSignature = track.signature || null;
-                queries.deleteTrackHistory.run(userId, videoId);
-                queries.insertTrackHistory.run(userId, videoId, track.title, track.author, trackSignature);
-            }
+            if (!serverConfig.global_history_enabled || !prefs || prefs.is_tracking_enabled === 0) return;
+
+            const trackSignature = track.signature || null;
+            queries.deleteTrackHistory.run(userId, videoId);
+            queries.insertTrackHistory.run(userId, videoId, track.title, track.author, trackSignature);
         } catch (error) {
             console.error(`❌ Track History Insert Error:`, error.message);
         }
@@ -264,16 +265,6 @@ function registerPlayerEvents(client) {
                     await player.queue.add(searchResult.tracks[0]);
                     await player.play();
                     
-                    // The "Play-Paused" UDP Pre-Warm (For the very first track in the session)
-                    if (player.queue.size === 0 && !player.get('nyra_has_warmed_up')) {
-                        player.set('nyra_has_warmed_up', true);
-                        (async () => {
-                            await player.pause();
-                            await new Promise(resolve => setTimeout(resolve, 1500));
-                            await player.resume();
-                        })();
-                    }
-
                     return; // Session continues with the next favorite!
                 } else {
                     // If all fails, immediately re-emit queueEnd to skip to the next one
@@ -343,16 +334,6 @@ function registerPlayerEvents(client) {
                         await player.queue.add(searchResult.tracks[0]);
                         await player.play();
                         
-                        // The "Play-Paused" UDP Pre-Warm (For the very first track in the session)
-                        if (player.queue.size === 0 && !player.get('nyra_has_warmed_up')) {
-                            player.set('nyra_has_warmed_up', true);
-                            (async () => {
-                                await player.pause();
-                                await new Promise(resolve => setTimeout(resolve, 1500));
-                                await player.resume();
-                            })();
-                        }
-
                         return; // Session continues with algorithmic autoplay!
                     } else {
                         console.warn(`⚠️ Autoplay could not resolve track: ${nextMeta.title}. Trying next...`);
@@ -377,7 +358,7 @@ function registerPlayerEvents(client) {
                 const textChannel = client.channels.cache.get(channelId);
                 if (textChannel) {
                     const msg = await textChannel.messages.fetch(npMessageId);
-                    if (msg && msg.deletable) msg.delete();
+                    if (msg && msg.deletable) msg.delete().catch(() => null);
                     await textChannel.send({
                         content: '🏁 **Queue finished!** I\'m still in the voice channel.',
                         embeds: []

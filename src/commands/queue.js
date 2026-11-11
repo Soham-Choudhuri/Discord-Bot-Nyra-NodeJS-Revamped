@@ -18,12 +18,15 @@ module.exports = {
         .setDescription('View the current playback queue'),
 
     async execute(interaction, client) {
-        const player = client.moonlink.players.get(interaction.guildId);
         const config = configManager.get(interaction.guildId);
         const replyFlags = config.reply_mode === 1 ? [] : [MessageFlags.Ephemeral];
+        
+        await interaction.deferReply({ flags: replyFlags });
+
+        const player = client.moonlink.players.get(interaction.guildId);
 
         if (!player) {
-            return interaction.reply({
+            return interaction.editReply({
                 content: '❌ There is no active player in this server.',
                 flags: replyFlags,
             });
@@ -31,7 +34,7 @@ module.exports = {
 
         // Send Initial Payload Statelessly
         const payload = this.generateQueuePayload(player, 0, interaction.guild.name, replyFlags);
-        await interaction.reply({ ...payload, withResponse: true });
+        await interaction.editReply({ ...payload, withResponse: true });
     },
 
     generateQueuePayload(player, page, guildName, replyFlags) {

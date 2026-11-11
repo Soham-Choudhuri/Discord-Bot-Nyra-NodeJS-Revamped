@@ -530,10 +530,10 @@ export default {
     }
   },
   audio: {
-    quality: 'high', // high, medium, low, lowest
-    bufferDurationMs: 400, // Explicitly attempt to expand Opus packet buffer to prevent microstutters
+    quality: 'medium', // high, medium, low, lowest
+    bufferDurationMs: 0, // Explicitly attempt to expand Opus packet buffer to prevent microstutters
     encryption: 'aead_aes256_gcm_rtpsize',
-    resamplingQuality: 'fastest', // best, medium, fastest, zero order holder, linear
+    resamplingQuality: 'linear', // best, medium, fastest, zero order holder, linear
     loudnessNormalizer: false, // Enable/disable AGC globally
     lookaheadMs: 5, // Limiter lookahead buffer in milliseconds
     gateThresholdLUFS: -60, // Silence threshold for AGC gate

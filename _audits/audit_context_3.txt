@@ -1,0 +1,75 @@
+AUDIT CONTEXT: NODELINK MANUAL SHUTDOWN TRAP AND VOICE UDP SECRETKEY DAVE DISCOVERY
+
+TARGET FILES
+
+1. NodeLink/start-nodelink.bat
+Handles NodeLink process launch, execution loop, crash recovery, Windows priority configuration (/HIGH), and lifecycle termination.
+
+2. NodeLink/src/index.ts
+Handles operating system signal listeners (SIGINT, SIGTERM), graceful shutdown procedures, HTTP and WebSocket server termination, and clean exit via process.exit(0).
+
+3. NodeLink/src/playback/player.ts
+Handles Discord voice connection state management, packet transmission interval, unhandled voice errors, and gateway track exception dispatching.
+
+4. NodeLink/node_modules/@performanc/voice/index.js
+Handles low-level Discord Voice UDP packet encryption, secretKey state management, and Discord DAVE end-to-end encryption protocol validation.
+
+5. src/lavalink/playerEvents.js
+Handles trackException events, circuit breaker logic, and forceful voice channel disconnects on the Nyra Discord bot client.
+
+
+CURRENT EXECUTION FLOW
+
+1. Manual Process Shutdown (CTRL + C Infinite Loop Trap)
+When the user issues a termination signal by pressing CTRL + C in the terminal running start-nodelink.bat, Windows routes the SIGINT signal to the running Node.js process.
+In NodeLink/src/index.ts, the SIGINT handler catches the signal, stops the heartbeat timer, flushes credential and cache managers to disk, closes the HTTP and WebSocket servers, and cleanly exits with process.exit(0).
+Control returns to cmd.exe in start-nodelink.bat immediately after the start /B /WAIT /HIGH line.
+The batch file contains no conditional check on the process exit code (such as if %ERRORLEVEL% equ 0 exit /b 0).
+Consequently, start-nodelink.bat treats every process exit, including intentional clean exits with status code 0, as an unexpected crash.
+It displays a crash message, initiates a 5-second timeout, and loops back to :loop, instantly rebooting Node.js and preventing manual shutdown.
+
+2. Voice Connection UDP SecretKey Missing and DAVE Handshake Conflicts
+When Nyra connects to a voice channel, Moonlink forwards voiceStateUpdate and voiceServerUpdate gateway payloads to NodeLink.
+NodeLink Player.ts establishes a voice connection using the @performanc/voice library.
+During initial connection or channel switching, the packet transmission timer (_packetInterval) begins executing before the voice UDP secret key has been fully negotiated with Discord.
+When sendAudioChunk executes without an active key, it throws Error: sendAudioChunk: UDP secretKey missing (udpInfo=true).
+Simultaneously, Discord DAVE (Discord Audio/Video End-to-end Encryption) protocol negotiations encounter group state conflicts, throwing ValidationError(WrongGroupId) and AlreadyInGroup.
+Player.ts catches the error in its voice error handler and dispatches a TRACK_EXCEPTION gateway event to Moonlink.
+Moonlink receives the event and logs the track error in Bot.log, skipping the current track.
+
+3. Channel Isolation and Forceful Teardown
+Shortly after the voice handshake failure, the bot detects no active listeners in the channel and schedules a 2-minute disconnect timer.
+Upon forceful channel disconnection, Nyra triggers its teardown sequence, destroying the Moonlink player instance.
+
+4. YouTube Track Stuck Recovery Resilience
+During track OhNCUgJXgK0 playback, range requests encountered HTTP 403 errors and client fallbacks (ANDROID_VR, TVHTML5, TVHTML5_CAST, WebEmbedded) failed to resolve a working stream.
+Buffer depletion caused the track to become stuck past the 15000ms threshold.
+Crucially, the previously applied stream error suppression patch prevented unhandled exception crashes, allowing NodeLink to remain online and execute stuck track recovery without dropping the server process.
+
+
+HARDWARE AND RESOURCE FOOTPRINT
+
+1. Main Thread CPU and Event Loop Impact
+start-nodelink.bat runs Node.js with /HIGH process priority on Windows P-Cores.
+The infinite restart loop prevents the user from freeing P-Core CPU resources and locks port 3000 against port re-binding.
+The UDP packet timer in @performanc/voice fires every 20ms on the main event loop. Unhandled exceptions in the timer queue create micro-stutters and disrupt audio pacing.
+
+2. Memory Allocations and Process Tree Hygiene
+Repeatedly bouncing NodeLink through an uncontrolled batch loop without clean exit handling risks leaving orphaned V8 processes and dangling network handles.
+Clean exit on code 0 allows the operating system to immediately reclaim the 512MB old-space allocation and semi-space memory.
+
+3. SQLite Operations
+Nyra Discord bot executes read operations against nyra.db via configManager.get upon receiving trackException.
+These reads utilize prepared statements and cached configuration, imposing minimal disk I/O overhead.
+
+
+INTERSECTION POINTS
+
+1. Batch Script Errorlevel Evaluation
+Updating start-nodelink.bat to evaluate %ERRORLEVEL% enables clean termination when Node.js exits with code 0 (SIGINT / CTRL + C), while preserving automatic restarts when Node.js terminates with a non-zero crash code.
+
+2. Voice Library Handshake Error Handling
+Modifying Player.ts voice error listeners to suppress or gracefully handle transient UDP secretKey missing errors during initial handshake prevents spurious TRACK_EXCEPTION events and unwanted track skipping.
+
+3. Discord DAVE Protocol Synchronization
+Ensuring voice connection states wait for successful UDP and encryption key negotiation before starting packet transmission prevents DAVE validation errors.

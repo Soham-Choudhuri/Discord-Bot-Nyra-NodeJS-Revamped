@@ -36,7 +36,8 @@ function initSchema() {
             artist_memory INTEGER DEFAULT 5,
             regex_blacklist TEXT DEFAULT '\\b(slowed|reverb|nightcore|sped\\s*up|chipmunk|mashup|tiktok|remix|8d|bass\\s*boosted|acoustic|demo|instrumental|karaoke|cover|live)\\b',
             reply_mode INTEGER DEFAULT 0,
-            whitelist_role TEXT DEFAULT NULL
+            whitelist_role TEXT DEFAULT NULL,
+            global_history_enabled INTEGER DEFAULT 1
         )
     `).run();
 
@@ -126,6 +127,9 @@ function initSchema() {
     }
     if (!settingsColumnNames.includes('whitelist_role')) {
         db.prepare('ALTER TABLE settings ADD COLUMN whitelist_role TEXT DEFAULT NULL').run();
+    }
+    if (!settingsColumnNames.includes('global_history_enabled')) {
+        db.prepare('ALTER TABLE settings ADD COLUMN global_history_enabled INTEGER DEFAULT 1').run();
     }
 
     // --- Safe Migration for user_favorites ---

@@ -1,0 +1,93 @@
+AUDIT CONTEXT: NODELINK SABR STREAM UNCAUGHT EXCEPTION AND RANGE STREAM 403 DISCOVERY
+
+TARGET FILES
+
+1. NodeLink/src/sources/youtube/YouTube.ts
+Handles YouTube playback stream creation, SABR streaming protocol, stall detection, session refreshing, and error handling.
+
+2. NodeLink/src/playback/player.ts
+Handles audio stream consumption, profiler tap piping, track playback lifecycle, and error event emission to Moonlink.
+
+3. NodeLink/src/playback/processing/streamProcessor.ts
+Handles audio resource processing, seekable resource creation, MP4Box seek parsing, and HTTP range requests.
+
+4. src/lavalink/playerEvents.js
+Handles trackException, trackStuck, and circuit breaker logic on the Nyra Discord bot client.
+
+5. src/workers/ytmusic.worker.js
+Handles background YouTube Music metadata and autoplay recommendation requests on worker threads.
+
+
+CURRENT EXECUTION FLOW
+
+1. Stream Initialization and Playback Pipeline
+When a YouTube track is dispatched to NodeLink, YouTube.ts executes getTrackUrl to retrieve audio formats and streaming endpoints. For YouTube tracks requiring SABR (Server-side Adaptive Bitrate), YouTube.ts instantiates SabrStream and wraps it inside a PassThrough stream in loadSabrStream.
+In Player.ts fetchResource, the returned fetchedStream is piped into profilerTap (a secondary PassThrough stream) to measure throughput. Crucially, Node.js stream.pipe does not forward error events from the source stream to the destination stream, leaving fetchedStream with zero registered error event listeners.
+
+2. SABR Stream Protection and Stall Event
+During playback of track Left Behind (identifier 7Z5-DxdO26o), YouTube triggers Stream Protection Status 2 (Limited Playback).
+SabrStream emits a stall event to request a session refresh.
+YouTube.ts receives the stall event and calls getTrackUrl with refresh flag set to true.
+
+3. Client Exhaustion and Recovery Failure
+During the recovery call, multiple YouTube client endpoints fail in sequence:
+youtube-ANDROID_VR returns no streaming data.
+youtube-TVHTML5 returns no streaming data.
+youtube-TVHTML5_CAST returns no streaming data.
+WebEmbedded fails URL pre-flight with HTTP status 403.
+Because all client strategies fail to acquire a new SABR streaming session, YouTube.ts reaches line 1797 and throws Error: No SABR session available for recovery.
+
+4. Unhandled Stream Error and Fatal Process Crash
+The thrown error is caught in the stall event catch block at line 1826.
+At line 1832, YouTube.ts invokes stream.destroy(err).
+The custom stream.destroy wrapper forwards the error to sabr.destroy(err) and originalDestroy(err).
+In Node.js, invoking destroy(err) on a stream emits an unhandled error event if no error listener is attached to that stream.
+Because neither loadSabrStream nor Player.ts attached an error listener to fetchedStream, Node.js escalates the unhandled error event to a fatal Uncaught Exception: Error: No SABR session available for recovery at YouTube.ts:1797.
+The NodeLink process terminates abruptly.
+
+5. Downstream Bot Disconnection and Recovery
+With NodeLink dead, Nyra Moonlink client encounters read ECONNRESET followed by connect ECONNREFUSED on port 3000.
+start-nodelink.bat detects process exit and restarts NodeLink via the restart loop.
+
+6. Range Stream HTTP 403 Track Exception
+In parallel or preceding tracks, MP4 seeking via createSeekeableAudioResource calls openRangeStream in streamProcessor.ts.
+Direct HTTP range requests to YouTube URLs return HTTP 403 Forbidden because YouTube direct links expire or enforce SABR protection.
+streamProcessor.ts throws HTTP 403 while opening range stream.
+Player.ts catches this and emits TRACK_EXCEPTION to Moonlink.
+Nyra playerEvents.js catches the trackException and skips the track to preserve queue continuity.
+
+7. Worker Autoplay Network Resilience
+ytmusic.worker.js encountered a transient ECONNABORTED network error during getAdvancedUpNexts.
+The recently implemented exponential backoff retry loop caught the error on Attempt 1 of 3, successfully completing on retry without blocking the P-Core main thread.
+
+
+HARDWARE AND RESOURCE FOOTPRINT
+
+1. Main Thread vs Worker Thread Boundary
+The uncaught exception occurs entirely on the NodeLink main thread (P-Core), which orchestrates audio pipelines, WebRTC voice streaming to Discord, and the WebSocket gateway.
+Terminating the NodeLink main thread drops audio streaming for all active voice connections simultaneously.
+Autoplay recommendations run on dedicated Node.js worker threads (E-Cores via ytmusic.worker.js), preventing HTTP network stalls from blocking audio processing.
+
+2. Memory Allocations and Garbage Collection
+NodeLink runs under V8 limits of 64MB semi-space and 512MB old-space.
+When SABR recovery fails, active audio buffers, CompositeBuffer chunks, and PassThrough buffers remain allocated until process exit or GC sweep.
+Piping fetchedStream without lifecycle error bindings prevents proper buffer flushing and garbage collection of stale stream instances.
+
+3. SQLite Operations
+Nyra Discord bot performs read operations on nyra.db via configManager.get upon receiving trackException.
+These reads use prepared statements and in-memory config caching, imposing negligible disk I/O.
+
+
+INTERSECTION POINTS
+
+1. NodeLink YouTube SABR Stream Destruction Logic
+Modifying YouTube.ts error handling and stream destruction requires ensuring that stream.destroy attaches a passive error listener or suppresses unhandled error re-emission to prevent process crashes.
+
+2. NodeLink Player Audio Stream Pipeline
+Modifying Player.ts fetchResource requires attaching an error listener to fetchedStream prior to piping into profilerTap, ensuring source stream errors are forwarded to trackException rather than bubbling up as unhandled exceptions.
+
+3. StreamProcessor Range Request Fallbacks
+Modifying streamProcessor.ts requires falling back gracefully when direct range requests return HTTP 403, delegating back to standard stream playback instead of throwing fatal range errors.
+
+4. Nyra Moonlink Reconnection Lifecycle
+Stability improvements in NodeLink prevent ECONNRESET and ECONNREFUSED cycles on the Moonlink WebSocket client, maintaining stable voice connections.
